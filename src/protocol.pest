@@ -1,26 +1,16 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "<!--" ~ (!"-->" ~ ANY)* ~ "-->" }
 
-char = {
-    ASCII_ALPHANUMERIC |
-    "_" | "-" | "." | "," | "'" | ":" | "/" | "|" |
-    "(" | ")" | "[" | "]" | "{" | "}"
-}
-content = { char* }
-
-doctype = _{ "<!DOCTYPE" ~ (!">" ~ ANY)* ~ ">" }
-
-head = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
-
-script = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
-
-body = _{ "<body>" ~ (!"</body>" ~ div )* ~ "</body>" }
-
-div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | el))* ~ "</div>" }
-
-el = _{ error_codes | ANY }
-
-// h5 = { "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" }
+file = { SOI ~ doctype ~ html ~ EOI }
+    doctype = _{ "<!DOCTYPE" ~ (!">" ~ ANY)* ~ ">" }
+    html    = _{ h_start ~ head ~ body ~ script* ~ h_end } 
+        h_start = _{ "<html" ~ (!">" ~ ANY)* ~ ">" }
+        head    = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
+        body    = _{ "<body>" ~ (!"</body>" ~ div )* ~ "</body>" }
+            div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | el))* ~ "</div>" }
+            el  = _{ error_codes | ANY }
+        script  = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
+        h_end   = _{ "</html>" }
 
 error_codes = {
     "<h5>" ~
@@ -43,17 +33,10 @@ table = { tstart ~ thead ~ tinner ~ tend }
         td =  { "<td>" ~ content ~ "</td>" }
     tend   = _{ "</table>" }
 
-html = _{
-   "<html" ~ (!">" ~ ANY)* ~ ">" ~
-   head ~
-   body ~
-   script* ~
-   "</html>"
+char = {
+    ASCII_ALPHANUMERIC |
+    "_" | "-" | "." | "," | "'" | ":" | "/" | "|" |
+    "(" | ")" | "[" | "]" | "{" | "}"
 }
 
-file = {
-    SOI ~
-    doctype ~
-    html ~
-    EOI
-}
+content = { char* }
