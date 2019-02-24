@@ -1,28 +1,52 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "<!--" ~ (!"-->" ~ ANY)* ~ "-->" }
 
+char = {
+    ASCII_ALPHANUMERIC |
+    "_" | "-" | "." | "," | "'" | ":" | "/" | "|" |
+    "(" | ")" | "[" | "]" | "{" | "}"
+}
+content = { char* }
+
 doctype = _{ "<!DOCTYPE" ~ (!">" ~ ANY)* ~ ">" }
 
 head = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
 
-body = _{
-    "<body>" ~
-    // (!"</body>" ~ ANY)* ~
-    (!"</body>" ~ div )* ~
-    "</body>"
-}
+script = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
+
+body = _{ "<body>" ~ (!"</body>" ~ div )* ~ "</body>" }
 
 div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | el))* ~ "</div>" }
 
-el = _{ h5 | ANY }
+el = _{ error_codes | ANY }
 
-h5 = { "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" }
+// h5 = { "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" }
 
-script = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
+error_codes = {
+    "<h5>" ~ (!"</h5>" ~ error_codes_id)* ~ "</h5>" ~
+    any_but_table ~
+    table
+}
 
-// a = { "<a" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" }
-// h5 = { "<h5>" ~ (!"</h5>" ~ a)* ~ "</h5>" }
-// int = { "-"? ~ ASCII_DIGIT+ }
+error_codes_id = _{
+    "<a id=\"protocol_error_codes\"" ~
+    (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~
+    "</a>"
+}
+
+any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
+
+table = {
+    "<table class=\"data-table\">" ~
+    "<tbody>" ~
+    "<tr>" ~ (!"</tr>" ~ th)* ~ "</tr>" ~
+    (!"</table>" ~ tr)* ~
+    "</table>"
+}
+
+th = _{ "<th>" ~ (!"</th>" ~ ANY)* ~ "</th>" }
+tr = { "<tr>" ~ (!"</tr>" ~ td)* ~ "</tr>" }
+td = { "<td>" ~ content ~ "</td>" }
 
 html = _{
    "<html" ~ (!">" ~ ANY)* ~ ">" ~
