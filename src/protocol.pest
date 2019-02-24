@@ -23,30 +23,25 @@ el = _{ error_codes | ANY }
 // h5 = { "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" }
 
 error_codes = {
-    "<h5>" ~ (!"</h5>" ~ error_codes_id)* ~ "</h5>" ~
+    "<h5>" ~
+    "<a id=\"protocol_error_codes\"" ~
+    (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~
+    "</a>" ~
+    "</h5>" ~
     any_but_table ~
     table
 }
 
-error_codes_id = _{
-    "<a id=\"protocol_error_codes\"" ~
-    (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~
-    "</a>"
-}
-
 any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
 
-table = {
-    "<table class=\"data-table\">" ~
-    "<tbody>" ~
-    "<tr>" ~ (!"</tr>" ~ th)* ~ "</tr>" ~
-    (!"</table>" ~ tr)* ~
-    "</table>"
-}
-
-th = _{ "<th>" ~ (!"</th>" ~ ANY)* ~ "</th>" }
-tr = { "<tr>" ~ (!"</tr>" ~ td)* ~ "</tr>" }
-td = { "<td>" ~ content ~ "</td>" }
+table = { tstart ~ thead ~ tinner ~ tend }
+    tstart = _{ "<table class=\"data-table\">" ~ "<tbody>" }
+    thead  = _{ "<tr>" ~ (!"</tr>" ~ th)* ~ "</tr>" }
+        th = _{ "<th>" ~ (!"</th>" ~ ANY)* ~ "</th>" }
+    tinner =  { (!"</table>" ~ tr)* }
+        tr =  { "<tr>" ~ (!"</tr>" ~ td)* ~ "</tr>" }
+        td =  { "<td>" ~ content ~ "</td>" }
+    tend   = _{ "</table>" }
 
 html = _{
    "<html" ~ (!">" ~ ANY)* ~ ">" ~

@@ -20,16 +20,19 @@ fn main() {
                 el.into_inner() // inner { table }
                     .next() // there is exactly one { table }
                     .unwrap()
+                    .into_inner() // inner { tinner }
+                    .next() // there is exactly one { tinner }
+                    .unwrap()
                     .into_inner() // inner { tr }
                     .into_iter()
                     .for_each(|tr| {
-                        let a = tr
+                        let kv = tr
                             .into_inner() // inner { td }
                             .into_iter()
                             .take(2) // keep first 2 columns
                             .map(|td| td.into_inner().as_str()) // inner { content }
                             .collect::<Vec<_>>();
-                        println!("{:?}", a);
+                        println!("{:?}", kv);
                     });
             }
 
