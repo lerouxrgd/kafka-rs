@@ -1,0 +1,40 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "<!--" ~ (!"-->" ~ ANY)* ~ "-->" }
+
+doctype = _{ "<!DOCTYPE" ~ (!">" ~ ANY)* ~ ">" }
+
+head = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
+
+body = _{
+    "<body>" ~
+    // (!"</body>" ~ ANY)* ~
+    (!"</body>" ~ div )* ~
+    "</body>"
+}
+
+div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | el))* ~ "</div>" }
+
+el = _{ h5 | ANY }
+
+h5 = { "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" }
+
+script = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
+
+// a = { "<a" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" }
+// h5 = { "<h5>" ~ (!"</h5>" ~ a)* ~ "</h5>" }
+// int = { "-"? ~ ASCII_DIGIT+ }
+
+html = _{
+   "<html" ~ (!">" ~ ANY)* ~ ">" ~
+   head ~
+   body ~
+   script* ~
+   "</html>"
+}
+
+file = {
+    SOI ~
+    doctype ~
+    html ~
+    EOI
+}

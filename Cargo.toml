@@ -1,0 +1,12 @@
+[package]
+name = "rsgen-kafka"
+version = "0.1.0"
+authors = ["Leroux Romain <leroux.rgd@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+scraper = "0.9"
+pest = "2.0"
+pest_derive = "2.0"
+heck = "0.3"
+tera = "0.11"
