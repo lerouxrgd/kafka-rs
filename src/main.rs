@@ -20,9 +20,6 @@ fn main() {
                 el.into_inner() // inner { table }
                     .next() // there is exactly one { table }
                     .unwrap()
-                    .into_inner() // inner { tinner }
-                    .next() // there is exactly one { tinner }
-                    .unwrap()
                     .into_inner() // inner { tr }
                     .into_iter()
                     .for_each(|tr| {

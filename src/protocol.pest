@@ -38,7 +38,7 @@ table = { tstart ~ thead ~ tinner ~ tend }
     tstart = _{ "<table class=\"data-table\">" ~ "<tbody>" }
     thead  = _{ "<tr>" ~ (!"</tr>" ~ th)* ~ "</tr>" }
         th = _{ "<th>" ~ (!"</th>" ~ ANY)* ~ "</th>" }
-    tinner =  { (!"</table>" ~ tr)* }
+    tinner = _{ (!"</table>" ~ tr)* }
         tr =  { "<tr>" ~ (!"</tr>" ~ td)* ~ "</tr>" }
         td =  { "<td>" ~ content ~ "</td>" }
     tend   = _{ "</table>" }
