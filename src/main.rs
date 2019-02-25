@@ -1,9 +1,26 @@
+mod templates;
+
+use lazy_static::*;
 use pest::Parser;
 use pest_derive::*;
+use regex::Regex;
 
 #[derive(Parser)]
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
+
+fn cap_comment(text: &str) -> String {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"\b.{1,50}\b\W?").expect("Invalid regex");
+    }
+    RE.captures_iter(text)
+        .into_iter()
+        .filter_map(|c| c.get(0))
+        .map(|c| vec!["///", c.as_str()].join(" "))
+        .collect::<Vec<String>>()
+        .as_slice()
+        .join("\n")
+}
 
 fn main() {
     // wget https://kafka.apache.org/21/protocol.html
@@ -26,7 +43,6 @@ fn main() {
                         let kv = tr
                             .into_inner() // inner { td }
                             .into_iter()
-                            .take(2) // keep first 2 columns
                             .map(|td| td.into_inner().as_str()) // inner { content }
                             .collect::<Vec<_>>();
                         println!("{:?}", kv);
