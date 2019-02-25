@@ -1,15 +1,14 @@
 use failure::{Error, Fail, SyncFailure};
 use tera::{Context, Tera};
 
-pub const ENUM_TERA: &str = "enum.tera";
-pub const ENUM_TEMPLATE: &str = r#"
-{%- if doc %}
-/// {{ doc }}
-{%- endif %}
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ErrorCode {
-    {%- for s in symbols %}
-    {{ s }},
+pub const ERROR_CODES_TERA: &str = "error_codes.tera";
+pub const ERROR_CODES_TEMPLATE: &str = r#"
+///  Numeric codes to indicate what problem occurred on the Kafka server
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KafkaError {
+    {%- for e in err_codes %}
+{{ e.2 }}
+    {{ e.0 }} = {{ e.1 }},
     {%- endfor %}
 }
 "#;
@@ -50,8 +49,10 @@ impl<T, E> ResultExt<T, E> for Result<T, E> {
     }
 }
 
+type ErrorCodeRows = Vec<(String, String, String)>;
+
 /// The main, stateless, component for templating. Current implementation uses Tera.
-/// Its responsability is to generate String representing Rust code/types for Kafka API.
+/// Its responsability is to generate String of Rust code/types for Kafka API.
 pub struct Templater {
     tera: Tera,
 }
@@ -60,7 +61,15 @@ impl Templater {
     /// Creates a new `Templater.`
     pub fn new() -> Result<Templater, Error> {
         let mut tera = Tera::new("/dev/null/*").sync()?;
-        tera.add_raw_template(ENUM_TERA, ENUM_TEMPLATE).sync()?;
+        tera.add_raw_template(ERROR_CODES_TERA, ERROR_CODES_TEMPLATE)
+            .sync()?;
         Ok(Templater { tera })
+    }
+
+    /// Generates a Rust enum with all Kafka error codes.
+    pub fn str_err_codes(&self, err_codes: &ErrorCodeRows) -> Result<String, Error> {
+        let mut ctx = Context::new();
+        ctx.insert("err_codes", err_codes);
+        Ok(self.tera.render(ERROR_CODES_TERA, &ctx).sync()?)
     }
 }
