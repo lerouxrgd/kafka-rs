@@ -1,5 +1,8 @@
 mod templates;
 
+use std::io::prelude::*;
+use std::net::TcpStream;
+
 use failure::Error;
 use heck::CamelCase;
 use lazy_static::*;
@@ -30,7 +33,7 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
         .join("\n")
 }
 
-fn main() -> Result<(), Error> {
+fn wip_protocol() -> Result<(), Error> {
     // wget https://kafka.apache.org/21/protocol.html
     let raw = include_str!("protocol.html");
 
@@ -71,6 +74,40 @@ fn main() -> Result<(), Error> {
             _ => (),
         }
     }
+
+    Ok(())
+}
+
+fn main() -> std::io::Result<()> {
+    let mut stream = TcpStream::connect("127.0.0.1:9092")?;
+
+    let api_key = 18 as i16;
+    let api_key = &api_key.to_be_bytes();
+
+    let api_version = 0 as i16;
+    let api_version = &api_version.to_be_bytes();
+
+    let correlation_id = 42 as i32;
+    let correlation_id = &correlation_id.to_be_bytes();
+
+    let client_id = -1 as i16;
+    let client_id = &client_id.to_be_bytes();
+
+    let size = ((api_key.len() + api_version.len() + correlation_id.len() + client_id.len())
+        as i32)
+        .to_be_bytes();
+
+    let mut buff = Vec::with_capacity(4);
+    buff.extend_from_slice(&size);
+    buff.write(api_key)?;
+    buff.write(api_version)?;
+    buff.write(correlation_id)?;
+    buff.write(client_id)?;
+    stream.write(&dbg!(buff))?;
+
+    let resp: &mut [u8] = &mut [0; 512];
+    stream.read(resp)?;
+    println!("---> {:?}", resp);
 
     Ok(())
 }
