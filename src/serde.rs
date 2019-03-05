@@ -1,4 +1,4 @@
-mod protocol {
+pub mod protocol {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize)]
@@ -15,8 +15,8 @@ mod protocol {
     }
 }
 
-use std::error;
-use std::fmt;
+use std::io::prelude::*;
+use std::{error, fmt, io};
 
 use serde::ser::{self, Serialize};
 
@@ -45,6 +45,12 @@ impl error::Error for Error {
     }
 }
 
+impl From<io::Error> for Error {
+    fn from(source: io::Error) -> Self {
+        source.into()
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Serializer {
@@ -55,12 +61,18 @@ impl Serializer {
     pub fn new() -> Self {
         Serializer { buf: vec![0; 4] }
     }
+
+    pub fn bytes(mut self) -> Vec<u8> {
+        let size = self.buf.len() as i32 - 4;
+        self.buf.splice(..4, (&size.to_be_bytes()).iter().cloned());
+        self.buf
+    }
 }
 
 pub fn to_bytes<T: Serialize>(val: &T) -> Result<Vec<u8>> {
     let mut serializer = Serializer::new();
     val.serialize(&mut serializer)?;
-    Ok(serializer.buf)
+    Ok(serializer.bytes())
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -74,36 +86,43 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
-    fn serialize_bool(self, v: bool) -> Result<()> {
-        unimplemented!()
+    fn serialize_bool(self, val: bool) -> Result<()> {
+        let val = val as i8;
+        val.serialize(self)?;
+        Ok(())
     }
 
-    fn serialize_i8(self, v: i8) -> Result<()> {
-        unimplemented!()
+    fn serialize_i8(self, val: i8) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
-    fn serialize_i16(self, v: i16) -> Result<()> {
-        unimplemented!()
+    fn serialize_i16(self, val: i16) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
-    fn serialize_i32(self, v: i32) -> Result<()> {
-        unimplemented!()
+    fn serialize_i32(self, val: i32) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
-    fn serialize_i64(self, v: i64) -> Result<()> {
-        unimplemented!()
+    fn serialize_i64(self, val: i64) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
-    fn serialize_u8(self, v: u8) -> Result<()> {
-        unimplemented!()
+    fn serialize_u8(self, _: u8) -> Result<()> {
+        unimplemented!("Not part of Kafka binary protocol")
     }
 
-    fn serialize_u16(self, v: u16) -> Result<()> {
-        unimplemented!()
+    fn serialize_u16(self, _: u16) -> Result<()> {
+        unimplemented!("Not part of Kafka binary protocol")
     }
 
-    fn serialize_u32(self, v: u32) -> Result<()> {
-        unimplemented!()
+    fn serialize_u32(self, val: u32) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
@@ -122,8 +141,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         unimplemented!()
     }
 
-    fn serialize_str(self, v: &str) -> Result<()> {
-        unimplemented!()
+    fn serialize_str(self, val: &str) -> Result<()> {
+        let size = val.len() as i16;
+        self.buf.write(&size.to_be_bytes())?;
+        self.buf.write_all(val.as_bytes())?;
+        Ok(())
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
@@ -131,14 +153,16 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_none(self) -> Result<()> {
-        unimplemented!()
+        let size = -1 as i16;
+        size.serialize(self)?;
+        Ok(())
     }
 
-    fn serialize_some<T>(self, v: &T) -> Result<()>
+    fn serialize_some<T>(self, val: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        unimplemented!()
+        val.serialize(self)
     }
 
     fn serialize_unit(self) -> Result<()> {
@@ -209,7 +233,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_struct(self, _: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        unimplemented!()
+        // TODO: implement that now ...
+        unimplemented!("I need to be implemented!!")
     }
 
     fn serialize_struct_variant(
@@ -344,8 +369,17 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{protocol::*, *};
 
     #[test]
-    fn test_name() {}
+    fn test_ser() {
+        let header = HeaderRequest {
+            api_key: 18,
+            api_version: 0,
+            correlation_id: 42,
+            client_id: None,
+        };
+        let bytes = to_bytes(&header).unwrap();
+        println!("{:?}", bytes);
+    }
 }
