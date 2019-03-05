@@ -1,3 +1,4 @@
+mod serde;
 mod templates;
 
 use std::io::prelude::*;
@@ -78,7 +79,7 @@ fn wip_protocol() -> Result<(), Error> {
     Ok(())
 }
 
-fn main() -> std::io::Result<()> {
+fn wip_raw_req() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:9092")?;
 
     let api_key = 18 as i16;
@@ -110,4 +111,9 @@ fn main() -> std::io::Result<()> {
     println!("---> {:?}", resp);
 
     Ok(())
+}
+
+fn main() {
+    // wip_protocol().unwrap();
+    // wip_raw_req().unwrap();
 }
