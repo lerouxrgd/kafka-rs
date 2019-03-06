@@ -1,3 +1,4 @@
+mod protocol;
 mod serde;
 mod templates;
 
@@ -115,5 +116,5 @@ fn wip_raw_req() -> std::io::Result<()> {
 
 fn main() {
     // wip_protocol().unwrap();
-    // wip_raw_req().unwrap();
+    wip_raw_req().unwrap();
 }
