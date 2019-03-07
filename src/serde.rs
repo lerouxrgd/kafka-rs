@@ -510,7 +510,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        if self.input.len() < 4 {
+            return Err(de::Error::custom("Not enough bytes to deserialize u32"));
+        }
+        let (val, rest) = self.input.split_at(4);
+        self.input = rest;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(val);
+        visitor.visit_u32(u32::from_be_bytes(bytes))
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
@@ -545,7 +552,6 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // visitor.visit_str(s)
         unimplemented!()
     }
 

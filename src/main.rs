@@ -1,6 +1,7 @@
 mod protocol;
 mod serde;
 mod templates;
+mod types;
 
 use std::io::prelude::*;
 use std::net::TcpStream;
