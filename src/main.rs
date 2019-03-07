@@ -35,7 +35,7 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
         .join("\n")
 }
 
-fn wip_protocol() -> Result<(), Error> {
+fn wip_parsing() -> Result<(), Error> {
     // wget https://kafka.apache.org/21/protocol.html
     let raw = include_str!("protocol.html");
 
@@ -80,32 +80,20 @@ fn wip_protocol() -> Result<(), Error> {
     Ok(())
 }
 
-fn wip_raw_req() -> std::io::Result<()> {
+fn wip_requests() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:9092")?;
 
-    let api_key = 18 as i16;
-    let api_key = &api_key.to_be_bytes();
+    use crate::protocol::*;
+    use crate::serde::*;
 
-    let api_version = 0 as i16;
-    let api_version = &api_version.to_be_bytes();
-
-    let correlation_id = 42 as i32;
-    let correlation_id = &correlation_id.to_be_bytes();
-
-    let client_id = -1 as i16;
-    let client_id = &client_id.to_be_bytes();
-
-    let size = ((api_key.len() + api_version.len() + correlation_id.len() + client_id.len())
-        as i32)
-        .to_be_bytes();
-
-    let mut buff = Vec::with_capacity(4);
-    buff.extend_from_slice(&size);
-    buff.write(api_key)?;
-    buff.write(api_version)?;
-    buff.write(correlation_id)?;
-    buff.write(client_id)?;
-    stream.write(&dbg!(buff))?;
+    let header = HeaderRequest {
+        api_key: 18,
+        api_version: 0,
+        correlation_id: 42,
+        client_id: None,
+    };
+    let bytes = to_bytes(&header).unwrap();
+    stream.write(&bytes)?;
 
     let resp: &mut [u8] = &mut [0; 512];
     stream.read(resp)?;
@@ -115,6 +103,6 @@ fn wip_raw_req() -> std::io::Result<()> {
 }
 
 fn main() {
-    // wip_protocol().unwrap();
-    wip_raw_req().unwrap();
+    // wip_parsing().unwrap();
+    wip_requests().unwrap();
 }

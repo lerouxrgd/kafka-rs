@@ -52,6 +52,12 @@ pub struct Serializer {
     buf: Vec<u8>,
 }
 
+pub fn to_bytes<T: Serialize>(val: &T) -> Result<Vec<u8>> {
+    let mut serializer = Serializer::new();
+    val.serialize(&mut serializer)?;
+    Ok(serializer.bytes())
+}
+
 impl Serializer {
     pub fn new() -> Self {
         Serializer { buf: vec![0; 4] }
@@ -62,12 +68,6 @@ impl Serializer {
         self.buf.splice(..4, (&size.to_be_bytes()).iter().cloned());
         self.buf
     }
-}
-
-pub fn to_bytes<T: Serialize>(val: &T) -> Result<Vec<u8>> {
-    let mut serializer = Serializer::new();
-    val.serialize(&mut serializer)?;
-    Ok(serializer.bytes())
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -108,11 +108,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u8(self, _: u8) -> Result<()> {
-        Err(ser::Error::custom("Not part of Kafka binary protocol"))
+        Err(ser::Error::custom("Not part of Kafka binary protocol: u8"))
     }
 
     fn serialize_u16(self, _: u16) -> Result<()> {
-        Err(ser::Error::custom("Not part of Kafka binary protocol"))
+        Err(ser::Error::custom("Not part of Kafka binary protocol: u16"))
     }
 
     fn serialize_u32(self, val: u32) -> Result<()> {
@@ -137,7 +137,14 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, val: &str) -> Result<()> {
-        let size = val.len() as i16;
+        let size = if val.len() > std::i16::MAX as usize {
+            return Err(ser::Error::custom(format!(
+                "Str slice is too long: {}",
+                val.len()
+            )));
+        } else {
+            val.len() as i16
+        };
         self.buf.write(&size.to_be_bytes())?;
         self.buf.write_all(val.as_bytes())?;
         Ok(())
@@ -361,7 +368,6 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     }
 }
 
-// TODO: read header somehow
 pub fn from_bytes<'a, T>(input: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
@@ -370,14 +376,15 @@ where
 
     use crate::protocol::HeaderResponse;
     let header = HeaderResponse::deserialize(&mut deserializer)?;
-    println!("{:?}", header);
 
-    let mut deserializer = Deserializer::from_bytes(deserializer.input);
     let t = T::deserialize(&mut deserializer)?;
     if deserializer.input.len() == 0 {
         Ok(t)
     } else {
-        Err(de::Error::custom("Bytes remaining"))
+        Err(de::Error::custom(format!(
+            "{} bytes remaining",
+            deserializer.input.len()
+        )))
     }
 }
 
@@ -402,12 +409,15 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input.len() < 1 {
+            return Err(de::Error::custom("Not enough bytes to deserialize bool"));
+        }
         let (val, rest) = self.input.split_at(1);
         self.input = rest;
         let val = match val[0] {
             0u8 => false,
             1u8 => true,
-            _ => return Err(de::Error::custom("")),
+            _ => return Err(de::Error::custom("Not a boolean")),
         };
         visitor.visit_bool(val)
     }
@@ -416,6 +426,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input.len() < 1 {
+            return Err(de::Error::custom("Not enough bytes to deserialize i8"));
+        }
         let (val, rest) = self.input.split_at(1);
         self.input = rest;
         let mut bytes = [0u8; 1];
@@ -427,6 +440,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input.len() < 2 {
+            return Err(de::Error::custom("Not enough bytes to deserialize i16"));
+        }
         let (val, rest) = self.input.split_at(2);
         self.input = rest;
         let mut bytes = [0u8; 2];
@@ -438,6 +454,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input.len() < 4 {
+            return Err(de::Error::custom("Not enough bytes to deserialize i32"));
+        }
         let (val, rest) = self.input.split_at(4);
         self.input = rest;
         let mut bytes = [0u8; 4];
@@ -449,6 +468,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input.len() < 8 {
+            return Err(de::Error::custom("Not enough bytes to deserialize i64"));
+        }
         let (val, rest) = self.input.split_at(8);
         self.input = rest;
         let mut bytes = [0u8; 8];
@@ -566,6 +588,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        if self.input.len() < 4 {
+            return Err(de::Error::custom(
+                "Not enough bytes to deserialize seq size (i32)",
+            ));
+        }
         let (val, rest) = self.input.split_at(4);
         self.input = rest;
         let mut bytes = [0u8; 4];
