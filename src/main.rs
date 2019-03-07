@@ -95,8 +95,9 @@ fn wip_requests() -> std::io::Result<()> {
     let bytes = to_bytes(&header).unwrap();
     stream.write(&bytes)?;
 
-    let resp: &mut [u8] = &mut [0; 512];
-    stream.read(resp)?;
+    let (header, resp) =
+        from_reader::<_, HeaderResponse, ApiVersionsResponse>(&mut stream).unwrap();
+    println!("---> {:?}", header);
     println!("---> {:?}", resp);
 
     Ok(())

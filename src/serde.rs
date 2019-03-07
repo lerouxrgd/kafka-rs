@@ -368,18 +368,32 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     }
 }
 
-pub fn from_bytes<'a, T>(input: &'a [u8]) -> Result<T>
+pub fn from_reader<R, H, T>(rdr: &mut R) -> Result<(H, T)>
 where
+    R: io::Read,
+    H: de::DeserializeOwned,
+    T: de::DeserializeOwned,
+{
+    let mut buf = [0u8; 4];
+    rdr.read_exact(&mut buf)?;
+    let size = i32::from_be_bytes(buf);
+    let mut bytes = vec![0; size as usize];
+    rdr.read_exact(&mut bytes)?;
+    from_bytes::<H, T>(&bytes)
+}
+
+pub fn from_bytes<'a, H, T>(input: &'a [u8]) -> Result<(H, T)>
+where
+    H: Deserialize<'a>,
     T: Deserialize<'a>,
 {
     let mut deserializer = Deserializer::from_bytes(input);
 
-    use crate::protocol::HeaderResponse;
-    let header = HeaderResponse::deserialize(&mut deserializer)?;
+    let header = H::deserialize(&mut deserializer)?;
+    let resp = T::deserialize(&mut deserializer)?;
 
-    let t = T::deserialize(&mut deserializer)?;
     if deserializer.input.len() == 0 {
-        Ok(t)
+        Ok((header, resp))
     } else {
         Err(de::Error::custom(format!(
             "{} bytes remaining",
@@ -739,6 +753,7 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
 mod tests {
     use super::*;
     use crate::protocol::*;
+    use std::io::Cursor;
 
     #[test]
     fn test_ser() {
@@ -750,12 +765,12 @@ mod tests {
         };
         let bytes = to_bytes(&header).unwrap();
         // [0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255]
-        println!("{:?}", bytes);
+        println!("HeaderRequest {:?}", bytes);
     }
 
     #[test]
     fn test_de() {
-        let bytes = [
+        let mut bytes = Cursor::new(vec![
             0, 0, 1, 12, 0, 0, 0, 42, 0, 0, 0, 0, 0, 43, 0, 0, 0, 0, 0, 7, 0, 1, 0, 0, 0, 10, 0, 2,
             0, 0, 0, 4, 0, 3, 0, 0, 0, 7, 0, 4, 0, 0, 0, 1, 0, 5, 0, 0, 0, 0, 0, 6, 0, 0, 0, 4, 0,
             7, 0, 0, 0, 1, 0, 8, 0, 0, 0, 6, 0, 9, 0, 0, 0, 5, 0, 10, 0, 0, 0, 2, 0, 11, 0, 0, 0,
@@ -766,9 +781,11 @@ mod tests {
             30, 0, 0, 0, 1, 0, 31, 0, 0, 0, 1, 0, 32, 0, 0, 0, 2, 0, 33, 0, 0, 0, 1, 0, 34, 0, 0,
             0, 1, 0, 35, 0, 0, 0, 1, 0, 36, 0, 0, 0, 0, 0, 37, 0, 0, 0, 1, 0, 38, 0, 0, 0, 1, 0,
             39, 0, 0, 0, 1, 0, 40, 0, 0, 0, 1, 0, 41, 0, 0, 0, 1, 0, 42, 0, 0, 0, 1,
-        ];
+        ]);
 
-        let val = from_bytes::<ApiVersionsResponse>(&bytes[4..]).unwrap();
-        println!("{:?}", val);
+        let (header, resp) =
+            from_reader::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes).unwrap();
+        println!("{:?}", header);
+        println!("{:?}", resp);
     }
 }
