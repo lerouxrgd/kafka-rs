@@ -1,3 +1,5 @@
+#![feature(specialization)]
+
 mod protocol;
 mod serde;
 mod templates;
