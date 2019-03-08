@@ -1,11 +1,10 @@
 use std::io::prelude::*;
 use std::{error, fmt, io};
 
-use serde::de::{
-    self, Deserialize, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
-    VariantAccess, Visitor,
-};
+use serde::de::{self, Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Serialize};
+
+use crate::types::Varint;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
@@ -108,11 +107,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u8(self, _: u8) -> Result<()> {
-        Err(ser::Error::custom("Not part of Kafka binary protocol: u8"))
+        Err(ser::Error::custom("not part of Kafka binary protocol: u8"))
     }
 
     fn serialize_u16(self, _: u16) -> Result<()> {
-        Err(ser::Error::custom("Not part of Kafka binary protocol: u16"))
+        Err(ser::Error::custom("not part of Kafka binary protocol: u16"))
     }
 
     fn serialize_u32(self, val: u32) -> Result<()> {
@@ -139,7 +138,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_str(self, val: &str) -> Result<()> {
         let size = if val.len() > std::i16::MAX as usize {
             return Err(ser::Error::custom(format!(
-                "Str slice is too long: {}",
+                "str slice is too long: {}",
                 val.len()
             )));
         } else {
@@ -150,8 +149,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        unimplemented!()
+    fn serialize_bytes(self, val: &[u8]) -> Result<()> {
+        self.buf.write(val)?;
+        Ok(())
     }
 
     fn serialize_none(self) -> Result<()> {
@@ -188,7 +188,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: Serialize + ?Sized,
     {
-        unimplemented!()
+        val.serialize(self)
     }
 
     fn serialize_newtype_variant<T>(
@@ -368,6 +368,37 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     }
 }
 
+impl Serialize for Varint {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        let mut buf = vec![];
+        zig_i32(self.0, &mut buf);
+        serializer.serialize_bytes(&buf)
+    }
+}
+
+fn zig_i32(n: i32, buf: &mut Vec<u8>) {
+    zig_i64(n as i64, buf)
+}
+
+fn zig_i64(n: i64, buf: &mut Vec<u8>) {
+    encode_variable(((n << 1) ^ (n >> 63)) as u64, buf)
+}
+
+fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
+    loop {
+        if z <= 0x7F {
+            buf.push((z & 0x7F) as u8);
+            break;
+        } else {
+            buf.push((0x80 | (z & 0x7F)) as u8);
+            z >>= 7;
+        }
+    }
+}
+
 pub fn from_reader<R, H, T>(rdr: &mut R) -> Result<(H, T)>
 where
     R: io::Read,
@@ -424,14 +455,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 1 {
-            return Err(de::Error::custom("Not enough bytes to deserialize bool"));
+            return Err(de::Error::custom("not enough bytes to deserialize bool"));
         }
         let (val, rest) = self.input.split_at(1);
         self.input = rest;
         let val = match val[0] {
             0u8 => false,
             1u8 => true,
-            _ => return Err(de::Error::custom("Not a boolean")),
+            _ => return Err(de::Error::custom("not a boolean")),
         };
         visitor.visit_bool(val)
     }
@@ -441,7 +472,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 1 {
-            return Err(de::Error::custom("Not enough bytes to deserialize i8"));
+            return Err(de::Error::custom("not enough bytes to deserialize i8"));
         }
         let (val, rest) = self.input.split_at(1);
         self.input = rest;
@@ -455,7 +486,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 2 {
-            return Err(de::Error::custom("Not enough bytes to deserialize i16"));
+            return Err(de::Error::custom("not enough bytes to deserialize i16"));
         }
         let (val, rest) = self.input.split_at(2);
         self.input = rest;
@@ -469,7 +500,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 4 {
-            return Err(de::Error::custom("Not enough bytes to deserialize i32"));
+            return Err(de::Error::custom("not enough bytes to deserialize i32"));
         }
         let (val, rest) = self.input.split_at(4);
         self.input = rest;
@@ -511,7 +542,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 4 {
-            return Err(de::Error::custom("Not enough bytes to deserialize u32"));
+            return Err(de::Error::custom("not enough bytes to deserialize u32"));
         }
         let (val, rest) = self.input.split_at(4);
         self.input = rest;
@@ -566,7 +597,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        visitor.visit_bytes(self.input)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
@@ -610,7 +641,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         if self.input.len() < 4 {
             return Err(de::Error::custom(
-                "Not enough bytes to deserialize seq size (i32)",
+                "not enough bytes to deserialize seq size (i32)",
             ));
         }
         let (val, rest) = self.input.split_at(4);
@@ -673,7 +704,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         if let Some(identifier) = self.identifiers.pop() {
             visitor.visit_borrowed_str(identifier)
         } else {
-            Err(de::Error::custom("No identifiers left on the stack"))
+            Err(de::Error::custom("no identifiers left on the stack"))
         }
     }
 
@@ -731,6 +762,76 @@ impl<'a, 'de> StructDeserializer<'a, 'de> {
     }
 }
 
+impl<'de> Deserialize<'de> for Varint {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(VarintVisitor)
+    }
+}
+
+struct VarintVisitor;
+
+impl<'de> Visitor<'de> for VarintVisitor {
+    type Value = Varint;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a zigzag encoded variable length i32")
+    }
+
+    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let mut rdr = std::io::Cursor::new(bytes);
+        let i = zag_i32(&mut rdr).map_err(|e| de::Error::custom(e.message))?;
+        Ok(Varint(i))
+    }
+}
+
+fn zag_i32<R: Read>(reader: &mut R) -> Result<i32> {
+    let i = zag_i64(reader)?;
+    if i < i64::from(i32::min_value()) || i > i64::from(i32::max_value()) {
+        Err(de::Error::custom("int out of range"))
+    } else {
+        Ok(i as i32)
+    }
+}
+
+fn zag_i64<R: Read>(reader: &mut R) -> Result<i64> {
+    let z = decode_variable(reader)?;
+    Ok(if z & 0x1 == 0 {
+        (z >> 1) as i64
+    } else {
+        !(z >> 1) as i64
+    })
+}
+
+fn decode_variable<R: Read>(reader: &mut R) -> Result<u64> {
+    let mut i = 0u64;
+    let mut buf = [0u8; 1];
+
+    let mut j = 0;
+    loop {
+        if j > 9 {
+            // if j * 7 > 64
+            return Err(de::Error::custom(
+                "overflow when decoding zigzag integer value",
+            ));
+        }
+        reader.read_exact(&mut buf[..])?;
+        i |= (u64::from(buf[0] & 0x7F)) << (j * 7);
+        if (buf[0] >> 7) == 0 {
+            break;
+        } else {
+            j += 1;
+        }
+    }
+
+    Ok(i)
+}
+
 impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
     type Error = Error;
 
@@ -762,7 +863,7 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn test_ser() {
+    fn ser() {
         let header = HeaderRequest {
             api_key: 18,
             api_version: 0,
@@ -775,7 +876,7 @@ mod tests {
     }
 
     #[test]
-    fn test_de() {
+    fn de() {
         let mut bytes = Cursor::new(vec![
             0, 0, 1, 12, 0, 0, 0, 42, 0, 0, 0, 0, 0, 43, 0, 0, 0, 0, 0, 7, 0, 1, 0, 0, 0, 10, 0, 2,
             0, 0, 0, 4, 0, 3, 0, 0, 0, 7, 0, 4, 0, 0, 0, 1, 0, 5, 0, 0, 0, 0, 0, 6, 0, 0, 0, 4, 0,
@@ -793,5 +894,21 @@ mod tests {
             from_reader::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes).unwrap();
         println!("{:?}", header);
         println!("{:?}", resp);
+    }
+
+    #[test]
+    fn zigzag() {
+        let vi = Varint(3);
+        let bytes = to_bytes(&vi).unwrap();
+        // let mut bytes = vec![];
+        // zig_i32(3, &mut bytes);
+        println!("Varint {:?}", bytes);
+
+        let vi = from_reader::<_, Varint, Varint>(&mut Cursor::new(bytes));
+        // let mut deserializer = Deserializer::from_bytes(&bytes);
+        // let vi = Varint::deserialize(&mut deserializer).unwrap();
+        // let mut rdr = Cursor::new(bytes);
+        // let vi = zag_i32(&mut rdr);
+        println!("Varint {:?}", vi);
     }
 }
