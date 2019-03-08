@@ -929,6 +929,7 @@ mod tests {
         zig_i32(i, &mut bytes);
         let mut rdr = Cursor::new(bytes);
         let (j, varint_size) = zag_i32(&mut rdr).unwrap();
-        println!("i = {:?}, j = {:?}, nb_read = {:?}", i, j, varint_size);
+        assert_eq!(i, j);
+        assert_eq!(1, varint_size)
     }
 }
