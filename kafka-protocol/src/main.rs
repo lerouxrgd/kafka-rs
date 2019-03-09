@@ -1,7 +1,7 @@
 #![feature(specialization)]
 
-mod protocol;
-mod serde;
+mod model;
+mod codecs;
 mod types;
 
 use std::io::prelude::*;
@@ -10,8 +10,8 @@ use std::net::TcpStream;
 fn wip_requests() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:9092")?;
 
-    use crate::protocol::*;
-    use crate::serde::*;
+    use crate::model::*;
+    use crate::codecs::*;
 
     let header = HeaderRequest {
         api_key: 18,

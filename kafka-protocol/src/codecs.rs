@@ -934,7 +934,7 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::*;
+    use crate::model::*;
     use std::io::Cursor;
 
     #[test]
