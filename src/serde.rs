@@ -6,7 +6,7 @@ use std::{error, fmt, io};
 use serde::de::{self, Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Serialize};
 
-use crate::types::Varint;
+use crate::types::{Varint, Varlong};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
@@ -377,6 +377,17 @@ impl Serialize for Varint {
     {
         let mut buf = vec![];
         zig_i32(self.0, &mut buf);
+        serializer.serialize_bytes(&buf)
+    }
+}
+
+impl Serialize for Varlong {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        let mut buf = vec![];
+        zig_i64(self.0, &mut buf);
         serializer.serialize_bytes(&buf)
     }
 }
@@ -768,17 +779,6 @@ impl<'a, 'de> StructDeserializer<'a, 'de> {
     }
 }
 
-impl<'de> Deserialize<'de> for Varint {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_bytes(VarintVisitor {
-            nb_read: Rc::new(RefCell::new(0)),
-        })
-    }
-}
-
 impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
     type Error = Error;
 
@@ -813,14 +813,25 @@ impl<'de, T: Visitor<'de>> Consumed for T {
     }
 }
 
-impl Consumed for VarintVisitor {
-    fn consumed(&self) -> Rc<RefCell<usize>> {
-        self.nb_read.clone()
+impl<'de> Deserialize<'de> for Varint {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(VarintVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
     }
 }
 
 struct VarintVisitor {
     nb_read: Rc<RefCell<usize>>,
+}
+
+impl Consumed for VarintVisitor {
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        self.nb_read.clone()
+    }
 }
 
 impl<'de> Visitor<'de> for VarintVisitor {
@@ -838,6 +849,44 @@ impl<'de> Visitor<'de> for VarintVisitor {
         let (i, nb_read) = zag_i32(&mut rdr).map_err(|e| de::Error::custom(e.message))?;
         *self.nb_read.borrow_mut() = nb_read;
         Ok(Varint(i))
+    }
+}
+
+impl<'de> Deserialize<'de> for Varlong {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Varlong, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(VarlongVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+struct VarlongVisitor {
+    nb_read: Rc<RefCell<usize>>,
+}
+
+impl Consumed for VarlongVisitor {
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        self.nb_read.clone()
+    }
+}
+
+impl<'de> Visitor<'de> for VarlongVisitor {
+    type Value = Varlong;
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a zigzag encoded variable length i64")
+    }
+
+    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let mut rdr = std::io::Cursor::new(bytes);
+        let (i, nb_read) = zag_i64(&mut rdr).map_err(|e| de::Error::custom(e.message))?;
+        *self.nb_read.borrow_mut() = nb_read;
+        Ok(Varlong(i))
     }
 }
 
@@ -897,8 +946,7 @@ mod tests {
             client_id: None,
         };
         let bytes = to_bytes(&header).unwrap();
-        // [0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255]
-        println!("HeaderRequest {:?}", bytes);
+        assert_eq!(vec![0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255], bytes);
     }
 
     #[test]
