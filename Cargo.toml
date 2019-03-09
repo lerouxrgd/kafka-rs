@@ -1,17 +1,6 @@
-[package]
-name = "rsgen-kafka"
-version = "0.1.0"
-authors = ["Leroux Romain <leroux.rgd@gmail.com>"]
-edition = "2018"
-license = "MIT"
-readme = "README.md"
+[workspace]
 
-[dependencies]
-failure = "0.1"
-heck = "0.3"
-lazy_static = "1.2"
-pest = "2.0"
-pest_derive = "2.0"
-regex = "1"
-serde = { version = "1.0", features = ["derive"] }
-tera = "0.11"
+members = [
+    "spec-parser",
+    "kafka-protocol",
+]

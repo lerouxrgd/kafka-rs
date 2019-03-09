@@ -1,1 +1,1 @@
-# rsgen-kafka
+# kafka-rs
