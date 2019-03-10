@@ -1,7 +1,7 @@
 #![feature(specialization)]
 
 mod model;
-mod codecs;
+mod codec;
 mod types;
 
 use std::io::prelude::*;
@@ -11,7 +11,7 @@ fn wip_requests() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:9092")?;
 
     use crate::model::*;
-    use crate::codecs::*;
+    use crate::codec::*;
 
     let header = HeaderRequest {
         api_key: 18,
