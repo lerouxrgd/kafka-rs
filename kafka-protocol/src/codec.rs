@@ -1088,30 +1088,45 @@ mod tests {
     use crate::model::*;
     use crate::types::*;
     use std::io::Cursor;
-    
-    #[test]
-    fn serde_nullable_string() {
-        let s1 = NullableString::from("yes");
-        let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<NullableString>(&bytes).unwrap();
-        assert_eq!(s1, s2);
 
-        let s1 = NullableString(None);
-        let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<NullableString>(&bytes).unwrap();
-        assert_eq!(s1, s2);
+    #[test]
+    fn serde_bool() {
+        let v1 = true;
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<bool>(&bytes).unwrap();
+        assert_eq!(v1, v2);
     }
 
     #[test]
-    fn serde_string() {
-        let s1 = String::from("yes");
-        let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<String>(&bytes).unwrap();
-        assert_eq!(s1, s2);
+    fn serde_integers() {
+        let v1 = 13 as i8;
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<i8>(&bytes).unwrap();
+        assert_eq!(v1, v2);
+
+        let v1 = 13 as i16;
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<i16>(&bytes).unwrap();
+        assert_eq!(v1, v2);
+
+        let v1 = 13 as i32;
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<i32>(&bytes).unwrap();
+        assert_eq!(v1, v2);
+
+        let v1 = 13 as i64;
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<i64>(&bytes).unwrap();
+        assert_eq!(v1, v2);
+
+        let v1 = 13 as u32;
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<u32>(&bytes).unwrap();
+        assert_eq!(v1, v2);
     }
 
     #[test]
-    fn serde_zigzag() {
+    fn serde_varint_varlong() {
         let i: i32 = 3;
         let mut bytes = vec![];
         zig_i32(i, &mut bytes);
@@ -1125,10 +1140,31 @@ mod tests {
         let j = decode_single::<Varint>(&bytes).unwrap();
         assert_eq!(i, j);
 
-        let i = Varlong(3);
+        let i = Varlong(-3);
         let bytes = encode_single(&i).unwrap();
         let j = decode_single::<Varlong>(&bytes).unwrap();
         assert_eq!(i, j);
+    }
+
+    #[test]
+    fn serde_string() {
+        let s1 = String::from("yes");
+        let bytes = encode_single(&s1).unwrap();
+        let s2 = decode_single::<String>(&bytes).unwrap();
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn serde_nullable_string() {
+        let s1 = NullableString::from("yes");
+        let bytes = encode_single(&s1).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        assert_eq!(s1, s2);
+
+        let s1 = NullableString(None);
+        let bytes = encode_single(&s1).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        assert_eq!(s1, s2);
     }
     
     #[test]
