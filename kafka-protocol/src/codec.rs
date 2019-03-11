@@ -47,16 +47,28 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(source: std::string::FromUtf8Error) -> Self {
+        source.into()
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Serializer {
     buf: Vec<u8>,
 }
 
-pub fn to_bytes<T: Serialize>(val: &T) -> Result<Vec<u8>> {
+pub fn encode_req<T: Serialize>(val: &T) -> Result<Vec<u8>> {
     let mut serializer = Serializer::new();
     val.serialize(&mut serializer)?;
     Ok(serializer.bytes())
+}
+
+pub fn encode_single<T: Serialize>(val: &T) -> Result<Vec<u8>> {
+    let mut serializer = Serializer::new();
+    val.serialize(&mut serializer)?;
+    Ok(serializer.buf[4..].to_vec())
 }
 
 impl Serializer {
@@ -437,7 +449,7 @@ fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
     }
 }
 
-pub fn from_reader<R, H, T>(rdr: &mut R) -> Result<(H, T)>
+pub fn read_resp<R, H, T>(rdr: &mut R) -> Result<(H, T)>
 where
     R: io::Read,
     H: de::DeserializeOwned,
@@ -448,10 +460,10 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    from_bytes::<H, T>(&bytes)
+    decode_resp::<H, T>(&bytes)
 }
 
-pub fn from_bytes<'a, H, T>(input: &'a [u8]) -> Result<(H, T)>
+pub fn decode_resp<'a, H, T>(input: &'a [u8]) -> Result<(H, T)>
 where
     H: Deserialize<'a>,
     T: Deserialize<'a>,
@@ -471,7 +483,7 @@ where
     }
 }
 
-pub fn from_reader_single<R, T>(rdr: &mut R) -> Result<T>
+pub fn read_single<R, T>(rdr: &mut R) -> Result<T>
 where
     R: io::Read,
     T: de::DeserializeOwned,
@@ -481,10 +493,10 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    from_bytes_single::<T>(&bytes)
+    decode_single::<T>(&bytes)
 }
 
-pub fn from_bytes_single<'a, T>(input: &'a [u8]) -> Result<T>
+pub fn decode_single<'a, T>(input: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
@@ -665,11 +677,21 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         }
         let (val, rest) = self.input.split_at(2);
         self.input = rest;
+
         let mut bytes = [0u8; 2];
         bytes.copy_from_slice(val);
         let size = i16::from_be_bytes(bytes) as usize;
-        // TODO: finish this !!!
-        visitor.visit_string(String::default())
+
+        if self.input.len() < size {
+            return Err(de::Error::custom(
+                format!("not enough bytes to deserialize string size of length {}", size),
+            ));
+        }
+        let (val, rest) = self.input.split_at(size);
+        self.input = rest;
+
+        let val = String::from_utf8(val.to_vec())?;
+        visitor.visit_string(val)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
@@ -928,7 +950,7 @@ impl<'de> Visitor<'de> for NullableStringVisitor {
         let size = size as usize;
         if bytes.len() < size + 2 {
             return Err(de::Error::custom(format!(
-                "not enough bytes to deserialize nullable str of size {} + 2",
+                "not enough bytes to deserialize nullable str of length {} + 2",
                 size
             )));
         }
@@ -1066,7 +1088,49 @@ mod tests {
     use crate::model::*;
     use crate::types::*;
     use std::io::Cursor;
+    
+    #[test]
+    fn serde_nullable_string() {
+        let s1 = NullableString::from("yes");
+        let bytes = encode_single(&s1).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        assert_eq!(s1, s2);
 
+        let s1 = NullableString(None);
+        let bytes = encode_single(&s1).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn serde_string() {
+        let s1 = String::from("yes");
+        let bytes = encode_single(&s1).unwrap();
+        let s2 = decode_single::<String>(&bytes).unwrap();
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn serde_zigzag() {
+        let i: i32 = 3;
+        let mut bytes = vec![];
+        zig_i32(i, &mut bytes);
+        let mut rdr = Cursor::new(bytes);
+        let (j, varint_size) = zag_i32(&mut rdr).unwrap();
+        assert_eq!(i, j);
+        assert_eq!(1, varint_size);
+
+        let i = Varint(3);
+        let bytes = encode_single(&i).unwrap();
+        let j = decode_single::<Varint>(&bytes).unwrap();
+        assert_eq!(i, j);
+
+        let i = Varlong(3);
+        let bytes = encode_single(&i).unwrap();
+        let j = decode_single::<Varlong>(&bytes).unwrap();
+        assert_eq!(i, j);
+    }
+    
     #[test]
     fn ser_req() {
         let header = HeaderRequest {
@@ -1075,7 +1139,7 @@ mod tests {
             correlation_id: 42,
             client_id: NullableString(None),
         };
-        let bytes = to_bytes(&header).unwrap();
+        let bytes = encode_req(&header).unwrap();
         assert_eq!(vec![0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255], bytes);
     }
 
@@ -1095,45 +1159,8 @@ mod tests {
         ]);
 
         let (header, resp) =
-            from_reader::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes).unwrap();
+            read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes).unwrap();
         println!("{:?}", header);
         println!("{:?}", resp);
-    }
-
-    #[test]
-    fn serde_nullable_string() {
-        let s1 = NullableString::from("yes");
-        let bytes = to_bytes(&s1).unwrap();
-        let s2 = from_reader_single::<_, NullableString>(&mut Cursor::new(bytes)).unwrap();
-        assert_eq!(s1, s2);
-    }
-
-    #[test]
-    fn serde_string() {
-        let s1 = String::from("yes");
-        let bytes = to_bytes(&s1).unwrap();
-        let s2 = from_reader_single::<_, String>(&mut Cursor::new(bytes)).unwrap();
-        assert_eq!(s1, s2);
-    }
-
-    #[test]
-    fn serde_zigzag() {
-        let i: i32 = 3;
-        let mut bytes = vec![];
-        zig_i32(i, &mut bytes);
-        let mut rdr = Cursor::new(bytes);
-        let (j, varint_size) = zag_i32(&mut rdr).unwrap();
-        assert_eq!(i, j);
-        assert_eq!(1, varint_size);
-
-        let i = Varint(3);
-        let bytes = to_bytes(&i).unwrap();
-        let j = from_reader_single::<_, Varint>(&mut Cursor::new(bytes)).unwrap();
-        assert_eq!(i, j);
-
-        let i = Varlong(3);
-        let bytes = to_bytes(&i).unwrap();
-        let j = from_reader_single::<_, Varlong>(&mut Cursor::new(bytes)).unwrap();
-        assert_eq!(i, j);
     }
 }

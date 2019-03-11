@@ -20,11 +20,11 @@ fn wip_requests() -> std::io::Result<()> {
         correlation_id: 42,
         client_id: NullableString::from("me"),
     };
-    let bytes = to_bytes(&header).unwrap();
+    let bytes = encode_req(&header).unwrap();
     stream.write(&bytes)?;
 
     let (header, resp) =
-        from_reader::<_, HeaderResponse, ApiVersionsResponse>(&mut stream).unwrap();
+        read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut stream).unwrap();
     println!("---> {:?}", header);
     println!("---> {:?}", resp);
 
