@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use std::ops::Deref;
 
 #[derive(Debug)]
@@ -16,6 +15,16 @@ pub struct Varlong(pub i64);
 
 impl Deref for Varlong {
     type Target = i64;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct NullableStr<'a>(pub Option<&'a str>);
+
+impl<'a> Deref for NullableStr<'a> {
+    type Target = Option<&'a str>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }

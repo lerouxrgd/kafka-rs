@@ -1,12 +1,13 @@
 use std::cell::RefCell;
 use std::io::prelude::*;
 use std::rc::Rc;
+use std::marker::PhantomData;
 use std::{error, fmt, io};
 
 use serde::de::{self, Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Serialize};
 
-use crate::types::{Varint, Varlong};
+use crate::types::{Varint, Varlong, NullableStr};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
@@ -157,16 +158,14 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_none(self) -> Result<()> {
-        let size = -1 as i16;
-        size.serialize(self)?;
-        Ok(())
+        Err(ser::Error::custom("invalid none, use a dedicated wrapper type"))
     }
 
-    fn serialize_some<T>(self, val: &T) -> Result<()>
+    fn serialize_some<T>(self, _: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        val.serialize(self)
+        Err(ser::Error::custom("invalid some, use a dedicated wrapper type"))
     }
 
     fn serialize_unit(self) -> Result<()> {
@@ -190,7 +189,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: Serialize + ?Sized,
     {
-        val.serialize(self)
+        unimplemented!()
     }
 
     fn serialize_newtype_variant<T>(
@@ -207,7 +206,21 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        unimplemented!()
+        match len {
+            None => Err(ser::Error::custom("seq length must be known")),
+            Some(len) => {
+                if len > std::i32::MAX as usize {
+                    Err(ser::Error::custom(format!(
+                        "seq is too long: {}",
+                        len
+                    )))
+                } else {
+                    let size = len as i32;
+                    self.buf.write(&size.to_be_bytes())?;
+                    Ok(self)
+                }
+            }
+        }
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
@@ -259,11 +272,11 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        unimplemented!()
+        val.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 }
 
@@ -367,6 +380,18 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
     fn end(self) -> Result<()> {
         unimplemented!()
+    }
+}
+
+impl<'a> Serialize for NullableStr<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        match self.0 {
+            None => serializer.serialize_i16(-1),
+            Some(val) => serializer.serialize_str(val),
+        }
     }
 }
 
@@ -813,6 +838,48 @@ impl<'de, T: Visitor<'de>> Consumed for T {
     }
 }
 
+impl<'a, 'de> Deserialize<'de> for NullableStr<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<NullableStr<'a>, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(NullableStrVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+            marker: PhantomData,
+        })
+    }
+}
+
+struct NullableStrVisitor<'a> {
+    nb_read: Rc<RefCell<usize>>,
+    marker: PhantomData<&'a str>,
+}
+
+impl<'a> Consumed for NullableStrVisitor<'a> {
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        self.nb_read.clone()
+    }
+}
+
+impl<'a, 'de> Visitor<'de> for NullableStrVisitor<'a> {
+    type Value = NullableStr<'a>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a kafka nullable string")
+    }
+
+    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let mut rdr = std::io::Cursor::new(bytes);
+        // TODO: dev that for real
+        let nb_read = 2;
+        *self.nb_read.borrow_mut() = nb_read;
+        Ok(NullableStr(None))
+    }
+}
+
 impl<'de> Deserialize<'de> for Varint {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
     where
@@ -846,7 +913,7 @@ impl<'de> Visitor<'de> for VarintVisitor {
         E: de::Error,
     {
         let mut rdr = std::io::Cursor::new(bytes);
-        let (i, nb_read) = zag_i32(&mut rdr).map_err(|e| de::Error::custom(e.message))?;
+        let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
         *self.nb_read.borrow_mut() = nb_read;
         Ok(Varint(i))
     }
@@ -884,7 +951,7 @@ impl<'de> Visitor<'de> for VarlongVisitor {
         E: de::Error,
     {
         let mut rdr = std::io::Cursor::new(bytes);
-        let (i, nb_read) = zag_i64(&mut rdr).map_err(|e| de::Error::custom(e.message))?;
+        let (i, nb_read) = zag_i64(&mut rdr).map_err(de::Error::custom)?;
         *self.nb_read.borrow_mut() = nb_read;
         Ok(Varlong(i))
     }
@@ -935,6 +1002,7 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
 mod tests {
     use super::*;
     use crate::model::*;
+    use crate::types::*;
     use std::io::Cursor;
 
     #[test]
@@ -943,7 +1011,7 @@ mod tests {
             api_key: 18,
             api_version: 0,
             correlation_id: 42,
-            client_id: None,
+            client_id: NullableStr(None),
         };
         let bytes = to_bytes(&header).unwrap();
         assert_eq!(vec![0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255], bytes);

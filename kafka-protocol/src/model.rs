@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::types::*;
+
 // All this will be generated with protocol.pest and templates.rs
 
 #[derive(Debug, Serialize)]
@@ -7,7 +9,7 @@ pub struct HeaderRequest<'a> {
     pub api_key: i16,
     pub api_version: i16,
     pub correlation_id: i32,
-    pub client_id: Option<&'a str>,
+    pub client_id: NullableStr<'a>,
 }
 
 #[derive(Debug, Deserialize)]
