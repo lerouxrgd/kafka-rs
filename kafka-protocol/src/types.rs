@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Varint(pub i32);
 
 impl Deref for Varint {
@@ -10,7 +10,7 @@ impl Deref for Varint {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Varlong(pub i64);
 
 impl Deref for Varlong {
@@ -20,11 +20,17 @@ impl Deref for Varlong {
     }
 }
 
-#[derive(Debug)]
-pub struct NullableStr<'a>(pub Option<&'a str>);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NullableString(pub Option<String>);
 
-impl<'a> Deref for NullableStr<'a> {
-    type Target = Option<&'a str>;
+impl NullableString {
+    pub fn from(s: &str) -> Self {
+        NullableString(Some(s.to_string()))
+    }
+}
+
+impl Deref for NullableString {
+    type Target = Option<String>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }

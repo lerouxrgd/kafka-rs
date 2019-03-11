@@ -1,7 +1,7 @@
 #![feature(specialization)]
 
-mod model;
 mod codec;
+mod model;
 mod types;
 
 use std::io::prelude::*;
@@ -10,15 +10,15 @@ use std::net::TcpStream;
 fn wip_requests() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:9092")?;
 
+    use crate::codec::*;
     use crate::model::*;
     use crate::types::*;
-    use crate::codec::*;
 
     let header = HeaderRequest {
         api_key: 18,
         api_version: 0,
         correlation_id: 42,
-        client_id: NullableStr(Some("me")),
+        client_id: NullableString::from("me"),
     };
     let bytes = to_bytes(&header).unwrap();
     stream.write(&bytes)?;

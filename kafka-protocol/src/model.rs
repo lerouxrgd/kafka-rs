@@ -5,11 +5,11 @@ use crate::types::*;
 // All this will be generated with protocol.pest and templates.rs
 
 #[derive(Debug, Serialize)]
-pub struct HeaderRequest<'a> {
+pub struct HeaderRequest {
     pub api_key: i16,
     pub api_version: i16,
     pub correlation_id: i32,
-    pub client_id: NullableStr<'a>,
+    pub client_id: NullableString,
 }
 
 #[derive(Debug, Deserialize)]
