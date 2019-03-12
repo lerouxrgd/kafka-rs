@@ -49,6 +49,12 @@ impl Deref for Bytes {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NullableBytes(pub Option<Vec<u8>>);
 
+impl NullableBytes {
+    pub fn from(b: Vec<u8>) -> Self {
+        NullableBytes(Some(b))
+    }
+}
+
 impl Deref for NullableBytes {
     type Target = Option<Vec<u8>>;
     fn deref(&self) -> &Self::Target {

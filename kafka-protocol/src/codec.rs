@@ -415,6 +415,31 @@ impl Serialize for Bytes {
     }
 }
 
+impl Serialize for NullableBytes {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        match &self.0 {
+            None => serializer.serialize_i32(-1),
+            Some(val) => {
+                if val.len() > std::i32::MAX as usize {
+                    return Err(ser::Error::custom(format!(
+                        "byte buf is too long: {}",
+                        val.len()
+                    )));
+                }
+
+                let size = val.len() as i32;
+                let mut buf = Vec::with_capacity(size as usize + 4);
+                buf.write(&size.to_be_bytes()).map_err(ser::Error::custom)?;
+                buf.write(&val).map_err(ser::Error::custom)?;
+                serializer.serialize_bytes(&buf)
+            }
+        }
+    }
+}
+
 impl Serialize for NullableString {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -703,9 +728,10 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         let size = i16::from_be_bytes(bytes) as usize;
 
         if self.input.len() < size {
-            return Err(de::Error::custom(
-                format!("not enough bytes to deserialize string size of length {}", size),
-            ));
+            return Err(de::Error::custom(format!(
+                "not enough bytes to deserialize string size of length {}",
+                size
+            )));
         }
         let (val, rest) = self.input.split_at(size);
         self.input = rest;
@@ -978,6 +1004,27 @@ impl<'de> Visitor<'de> for BytesVisitor {
     }
 }
 
+impl<'de> Deserialize<'de> for NullableBytes {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<NullableBytes, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(NullableBytesVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+struct NullableBytesVisitor {
+    nb_read: Rc<RefCell<usize>>,
+}
+
+impl Consumed for NullableBytesVisitor {
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        self.nb_read.clone()
+    }
+}
+
 impl<'de> Deserialize<'de> for NullableString {
     fn deserialize<D>(deserializer: D) -> std::result::Result<NullableString, D::Error>
     where
@@ -986,6 +1033,47 @@ impl<'de> Deserialize<'de> for NullableString {
         deserializer.deserialize_bytes(NullableStringVisitor {
             nb_read: Rc::new(RefCell::new(0)),
         })
+    }
+}
+
+impl<'de> Visitor<'de> for NullableBytesVisitor {
+    type Value = NullableBytes;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "kafka bytes")
+    }
+
+    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if bytes.len() < 4 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize byte buf size (i32)",
+            ));
+        }
+        let mut buf = [0u8; 4];
+        buf.copy_from_slice(&bytes[..4]);
+        let size = i32::from_be_bytes(buf);
+
+        if size == -1 {
+            *self.nb_read.borrow_mut() = 4;
+            Ok(NullableBytes(None))
+        } else {
+            let size = size as usize;
+            if bytes.len() < size + 4 {
+                return Err(de::Error::custom(format!(
+                    "not enough bytes to deserialize byte buf of length {} + 4",
+                    size
+                )));
+            }
+
+            let mut buf = vec![0u8; size];
+            buf.copy_from_slice(&bytes[4..size + 4]);
+            *self.nb_read.borrow_mut() = size + 4;
+
+            Ok(NullableBytes(Some(buf)))
+        }
     }
 }
 
@@ -1224,15 +1312,12 @@ mod tests {
     }
 
     #[test]
-    fn serde_string() {
+    fn serde_strings() {
         let s1 = String::from("yes");
         let bytes = encode_single(&s1).unwrap();
         let s2 = decode_single::<String>(&bytes).unwrap();
         assert_eq!(s1, s2);
-    }
 
-    #[test]
-    fn serde_nullable_string() {
         let s1 = NullableString::from("yes");
         let bytes = encode_single(&s1).unwrap();
         let s2 = decode_single::<NullableString>(&bytes).unwrap();
@@ -1250,8 +1335,18 @@ mod tests {
         let bytes = encode_single(&b1).unwrap();
         let b2 = decode_single::<Bytes>(&bytes).unwrap();
         assert_eq!(b1, b2);
+
+        let b1 = NullableBytes::from(vec![1, 2, 3]);
+        let bytes = encode_single(&b1).unwrap();
+        let b2 = decode_single::<NullableBytes>(&bytes).unwrap();
+        assert_eq!(b1, b2);
+
+        let b1 = NullableBytes(None);
+        let bytes = encode_single(&b1).unwrap();
+        let b2 = decode_single::<NullableBytes>(&bytes).unwrap();
+        assert_eq!(b1, b2);
     }
-    
+
     #[test]
     fn ser_req() {
         let header = HeaderRequest {
