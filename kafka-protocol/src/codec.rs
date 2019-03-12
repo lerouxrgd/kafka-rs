@@ -6,7 +6,7 @@ use std::{error, fmt, io};
 use serde::de::{self, Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Serialize};
 
-use crate::types::{NullableString, Varint, Varlong};
+use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
@@ -150,14 +150,14 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, val: &str) -> Result<()> {
-        let size = if val.len() > std::i16::MAX as usize {
+        if val.len() > std::i16::MAX as usize {
             return Err(ser::Error::custom(format!(
                 "str slice is too long: {}",
                 val.len()
             )));
-        } else {
-            val.len() as i16
-        };
+        }
+
+        let size = val.len() as i16;
         self.buf.write(&size.to_be_bytes())?;
         self.buf.write_all(val.as_bytes())?;
         Ok(())
@@ -395,7 +395,27 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     }
 }
 
-impl<'a> Serialize for NullableString {
+impl Serialize for Bytes {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        if self.0.len() > std::i32::MAX as usize {
+            return Err(ser::Error::custom(format!(
+                "byte buf is too long: {}",
+                self.0.len()
+            )));
+        }
+
+        let size = self.0.len() as i32;
+        let mut buf = Vec::with_capacity(size as usize + 4);
+        buf.write(&size.to_be_bytes()).map_err(ser::Error::custom)?;
+        buf.write(&self.0).map_err(ser::Error::custom)?;
+        serializer.serialize_bytes(&buf)
+    }
+}
+
+impl Serialize for NullableString {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
@@ -901,6 +921,63 @@ impl<'de, T: Visitor<'de>> Consumed for T {
     }
 }
 
+impl<'de> Deserialize<'de> for Bytes {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Bytes, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(BytesVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+struct BytesVisitor {
+    nb_read: Rc<RefCell<usize>>,
+}
+
+impl Consumed for BytesVisitor {
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        self.nb_read.clone()
+    }
+}
+
+impl<'de> Visitor<'de> for BytesVisitor {
+    type Value = Bytes;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "kafka bytes")
+    }
+
+    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if bytes.len() < 4 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize byte buf size (i32)",
+            ));
+        }
+        let mut buf = [0u8; 4];
+        buf.copy_from_slice(&bytes[..4]);
+        let size = i32::from_be_bytes(buf);
+
+        let size = size as usize;
+        if bytes.len() < size + 4 {
+            return Err(de::Error::custom(format!(
+                "not enough bytes to deserialize byte buf of length {} + 4",
+                size
+            )));
+        }
+
+        let mut buf = vec![0u8; size];
+        buf.copy_from_slice(&bytes[4..size + 4]);
+        *self.nb_read.borrow_mut() = size + 4;
+
+        Ok(Bytes(buf))
+    }
+}
+
 impl<'de> Deserialize<'de> for NullableString {
     fn deserialize<D>(deserializer: D) -> std::result::Result<NullableString, D::Error>
     where
@@ -1165,6 +1242,14 @@ mod tests {
         let bytes = encode_single(&s1).unwrap();
         let s2 = decode_single::<NullableString>(&bytes).unwrap();
         assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn serde_bytes() {
+        let b1 = Bytes(vec![1, 2, 3]);
+        let bytes = encode_single(&b1).unwrap();
+        let b2 = decode_single::<Bytes>(&bytes).unwrap();
+        assert_eq!(b1, b2);
     }
     
     #[test]
