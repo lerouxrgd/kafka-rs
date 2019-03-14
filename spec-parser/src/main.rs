@@ -44,10 +44,10 @@ fn wip_parsing() -> Result<(), Error> {
         .next() // there is exactly one { file }
         .unwrap();
 
-    for el in file.into_inner() {
-        match el.as_rule() {
+    for target in file.into_inner() {
+        match target.as_rule() {
             Rule::error_codes => {
-                let err_code_rows = el
+                let err_code_rows = target
                     .into_inner() // inner { table }
                     .next() // there is exactly one { table }
                     .unwrap()
@@ -67,10 +67,36 @@ fn wip_parsing() -> Result<(), Error> {
                     })
                     .collect::<Vec<_>>();
                 let s = templater.str_err_codes(&err_code_rows);
+                // println!("{}", s.unwrap());
+            }
+
+            Rule::api_keys => {
+                let api_key_rows = target
+                    .into_inner() // inner { table }
+                    .next() // there is exactly one { table }
+                    .unwrap()
+                    .into_inner() // inner { tr }
+                    .into_iter()
+                    .map(|tr| {
+                        let row = tr
+                            .into_inner() // inner { td }
+                            .into_iter()
+                            .map(|td| {
+                                td.into_inner() // inner { a }
+                                    .next() // there is exactly one { a }
+                                    .unwrap()
+                                    .into_inner() // inner { content }
+                                    .as_str()
+                            })
+                            .collect::<Vec<_>>();
+                        (String::from(row[0]), String::from(row[1]))
+                    })
+                    .collect::<Vec<_>>();
+                let s = templater.str_api_keys(&api_key_rows);
                 println!("{}", s.unwrap());
             }
 
-            // _ => println!("====> {:?}", el),
+            // _ => println!("====> {:?}", target),
             _ => (),
         }
     }

@@ -1350,7 +1350,7 @@ mod tests {
     #[test]
     fn ser_req() {
         let header = HeaderRequest {
-            api_key: 18,
+            api_key: ApiKey::ApiVersions,
             api_version: 0,
             correlation_id: 42,
             client_id: NullableString(None),

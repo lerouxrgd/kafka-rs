@@ -15,7 +15,7 @@ fn wip_requests() -> std::io::Result<()> {
     use crate::types::*;
 
     let header = HeaderRequest {
-        api_key: 18,
+        api_key: ApiKey::ApiVersions,
         api_version: 0,
         correlation_id: 42,
         client_id: NullableString::from("me"),
@@ -23,8 +23,7 @@ fn wip_requests() -> std::io::Result<()> {
     let bytes = encode_req(&header).unwrap();
     stream.write(&bytes)?;
 
-    let (header, resp) =
-        read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut stream).unwrap();
+    let (header, resp) = read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut stream).unwrap();
     println!("---> {:?}", header);
     println!("---> {:?}", resp);
 

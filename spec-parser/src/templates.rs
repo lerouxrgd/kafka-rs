@@ -3,12 +3,25 @@ use tera::{Context, Tera};
 
 pub const ERROR_CODES_TERA: &str = "error_codes.tera";
 pub const ERROR_CODES_TEMPLATE: &str = r#"
-///  Numeric codes to indicate what problem occurred on the Kafka server
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KafkaError {
+///  Numeric codes to indicate what problem occurred on the Kafka server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(i16)]
+pub enum ErrorCode {
     {%- for e in err_codes %}
 {{ e.2 }}
     {{ e.0 }} = {{ e.1 }},
+    {%- endfor %}
+}
+"#;
+
+pub const API_KEYS_TERA: &str = "api_keys.tera";
+pub const API_KEYS_TEMPLATE: &str = r#"
+///  Numeric codes used to specify request types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(i16)]
+pub enum ApiKey {
+    {%- for k in api_keys %}
+    {{ k.0 }} = {{ k.1 }},
     {%- endfor %}
 }
 "#;
@@ -51,6 +64,8 @@ impl<T, E> ResultExt<T, E> for Result<T, E> {
 
 type ErrorCodeRows = Vec<(String, String, String)>;
 
+type ApiKeyRows = Vec<(String, String)>;
+
 /// The main, stateless, component for templating. Current implementation uses Tera.
 /// Its responsability is to generate String of Rust code/types for Kafka API.
 pub struct Templater {
@@ -63,6 +78,8 @@ impl Templater {
         let mut tera = Tera::new("/dev/null/*").sync()?;
         tera.add_raw_template(ERROR_CODES_TERA, ERROR_CODES_TEMPLATE)
             .sync()?;
+        tera.add_raw_template(API_KEYS_TERA, API_KEYS_TEMPLATE)
+            .sync()?;
         Ok(Templater { tera })
     }
 
@@ -71,5 +88,12 @@ impl Templater {
         let mut ctx = Context::new();
         ctx.insert("err_codes", err_codes);
         Ok(self.tera.render(ERROR_CODES_TERA, &ctx).sync()?)
+    }
+
+    /// Generates a Rust enum with all Kafka api keys.
+    pub fn str_api_keys(&self, api_keys: &ApiKeyRows) -> Result<String, Error> {
+        let mut ctx = Context::new();
+        ctx.insert("api_keys", api_keys);
+        Ok(self.tera.render(API_KEYS_TERA, &ctx).sync()?)
     }
 }

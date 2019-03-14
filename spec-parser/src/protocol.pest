@@ -7,16 +7,23 @@ file = { SOI ~ doctype ~ html ~ EOI }
         h_start = _{ "<html" ~ (!">" ~ ANY)* ~ ">" }
         head    = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
         body    = _{ "<body>" ~ (!"</body>" ~ div )* ~ "</body>" }
-            div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | el))* ~ "</div>" }
-            el  = _{ error_codes | ANY }
+            div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | target))* ~ "</div>" }
         script  = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
         h_end   = _{ "</html>" }
 
+target = _{ error_codes | api_keys | ANY }
+
 error_codes = {
     "<h5>" ~
-    "<a id=\"protocol_error_codes\"" ~
-    (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~
-    "</a>" ~
+    "<a id=\"protocol_error_codes\"" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" ~
+    "</h5>" ~
+    any_but_table ~
+    table
+}
+
+api_keys = {
+    "<h5>" ~
+    "<a id=\"protocol_api_keys\"" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" ~
     "</h5>" ~
     any_but_table ~
     table
@@ -30,7 +37,8 @@ table = { tstart ~ thead ~ tinner ~ tend }
         th = _{ "<th>" ~ (!"</th>" ~ ANY)* ~ "</th>" }
     tinner = _{ (!"</table>" ~ tr)* }
         tr =  { "<tr>" ~ (!"</tr>" ~ td)* ~ "</tr>" }
-        td =  { "<td>" ~ content ~ "</td>" }
+        td =  { "<td>" ~ (a | content) ~ "</td>" }
+         a =  { "<a" ~ (!">" ~ ANY)* ~ ">" ~ content ~ "</a>" }
     tend   = _{ "</table>" }
 
 char = {
