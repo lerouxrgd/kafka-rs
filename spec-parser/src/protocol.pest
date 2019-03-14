@@ -11,7 +11,7 @@ file = { SOI ~ doctype ~ html ~ EOI }
         script  = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
         h_end   = _{ "</html>" }
 
-target = _{ error_codes | api_keys | ANY }
+target = _{ error_codes | api_keys | req_resp | ANY }
 
 error_codes = {
     "<h5>" ~
@@ -29,7 +29,14 @@ api_keys = {
     table
 }
 
+req_resp = {
+    "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" ~
+    any_but_pre ~
+    pre ~ ignored_table
+}
+
 any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
+any_but_pre   = _{ (!"<pre>" ~ ANY )* }
 
 table = { tstart ~ thead ~ tinner ~ tend }
     tstart = _{ "<table class=\"data-table\">" ~ "<tbody>" }
@@ -41,10 +48,16 @@ table = { tstart ~ thead ~ tinner ~ tend }
          a =  { "<a" ~ (!">" ~ ANY)* ~ ">" ~ content ~ "</a>" }
     tend   = _{ "</table>" }
 
+ignored_table = _{ table }
+
+pre  = _{ "<pre>" ~ spec ~ "</pre>" }
+spec =  { (!"</pre>" ~ ANY)* }
+// spec = { (!"</" ~ (char | "="))* }
+
+content = { (!"</" ~ char)* }
+
 char = {
     ASCII_ALPHANUMERIC |
     "_" | "-" | "." | "," | "'" | ":" | "/" | "|" |
     "(" | ")" | "[" | "]" | "{" | "}"
 }
-
-content = { char* }

@@ -44,6 +44,7 @@ fn wip_parsing() -> Result<(), Error> {
         .next() // there is exactly one { file }
         .unwrap();
 
+    let mut skip_req_resp = 1;
     for target in file.into_inner() {
         match target.as_rule() {
             Rule::error_codes => {
@@ -93,10 +94,18 @@ fn wip_parsing() -> Result<(), Error> {
                     })
                     .collect::<Vec<_>>();
                 let s = templater.str_api_keys(&api_key_rows);
-                println!("{}", s.unwrap());
+                // println!("{}", s.unwrap());
             }
 
-            // _ => println!("====> {:?}", target),
+            Rule::req_resp => {
+                if skip_req_resp > 0 {
+                    skip_req_resp -= 1;
+                    continue;
+                }
+                let yo = target.into_inner().as_str();
+                println!("==> {:?}", yo);
+                break;
+            }
             _ => (),
         }
     }
