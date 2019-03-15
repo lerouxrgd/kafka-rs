@@ -1,8 +1,5 @@
 mod templates;
 
-use std::io::prelude::*;
-use std::net::TcpStream;
-
 use failure::Error;
 use heck::CamelCase;
 use lazy_static::*;
@@ -44,7 +41,7 @@ fn wip_parsing() -> Result<(), Error> {
         .next() // there is exactly one { file }
         .unwrap();
 
-    let mut skip_req_resp = 1;
+    let mut skip_req_resp = 19;
     for target in file.into_inner() {
         match target.as_rule() {
             Rule::error_codes => {
@@ -68,7 +65,7 @@ fn wip_parsing() -> Result<(), Error> {
                     })
                     .collect::<Vec<_>>();
                 let s = templater.str_err_codes(&err_code_rows);
-                // println!("{}", s.unwrap());
+                println!("{}", s.unwrap());
             }
 
             Rule::api_keys => {
@@ -94,7 +91,7 @@ fn wip_parsing() -> Result<(), Error> {
                     })
                     .collect::<Vec<_>>();
                 let s = templater.str_api_keys(&api_key_rows);
-                // println!("{}", s.unwrap());
+                println!("{}", s.unwrap());
             }
 
             Rule::req_resp => {
@@ -104,7 +101,7 @@ fn wip_parsing() -> Result<(), Error> {
                 }
                 for section in target.into_inner() {
                     match section.as_rule() {
-                       _ => println!("====> {:?}", section.as_str()),
+                        _ => println!("====> {:?}", section.as_str()),
                     }
                 }
                 break;
