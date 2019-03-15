@@ -30,9 +30,11 @@ api_keys = {
 }
 
 req_resp = {
-    "<h5>" ~ (!"</h5>" ~ ANY)* ~ "</h5>" ~
+    "<h5>" ~
+    "<a name=" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" ~
+    "</h5>" ~
     any_but_pre ~
-    pre ~ ignored_table
+    spec
 }
 
 any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
@@ -48,11 +50,9 @@ table = { tstart ~ thead ~ tinner ~ tend }
          a =  { "<a" ~ (!">" ~ ANY)* ~ ">" ~ content ~ "</a>" }
     tend   = _{ "</table>" }
 
-ignored_table = _{ table }
-
-pre  = _{ "<pre>" ~ spec ~ "</pre>" }
-spec =  { (!"</pre>" ~ ANY)* }
-// spec = { (!"</" ~ (char | "="))* }
+spec = _{ pre ~ table }
+    pre = _{ "<pre>" ~ bnf ~ "</pre>" }
+    bnf =  { (!"</pre>" ~ ANY)* }
 
 content = { (!"</" ~ char)* }
 

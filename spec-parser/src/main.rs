@@ -102,10 +102,14 @@ fn wip_parsing() -> Result<(), Error> {
                     skip_req_resp -= 1;
                     continue;
                 }
-                let yo = target.into_inner().as_str();
-                println!("==> {:?}", yo);
+                for section in target.into_inner() {
+                    match section.as_rule() {
+                       _ => println!("====> {:?}", section.as_str()),
+                    }
+                }
                 break;
             }
+
             _ => (),
         }
     }
