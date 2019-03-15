@@ -1,0 +1,27 @@
+WHITESPACE = _{ " " }
+
+spec = {
+    api_key ~ kind ~ version ~ "=>" ~ types ~ NEWLINE
+    // ~ structt
+}
+
+// structt = !{
+//     PUSH(" "+) ~ (kv ~ NEWLINE)+ ~ POP
+// }
+// kv = { field ~ "=>" ~ types }
+
+api_key =  { (!kind ~ ASCII_ALPHA)+ }
+kind    =  { ("Request" | "Response") }
+version = _{ ("(Version:" ~ number ~ ")")? }
+
+number = { ASCII_DIGIT+ }
+
+types   =  { wrapped+ }
+wrapped =  { ("["? ~ (primitive | field) ~ "]"?) }
+
+field = { (!"=>" ~ (ASCII_ALPHA_LOWER | "_"))+ }
+
+primitive = {
+    "BOOLEAN" | "INT8" | "INT16" | "INT32" | "INT64" | "UINT32" | "VARINT" | "VARLONG" |
+    "STRING" | "NULLABLE_STRING" | "BYTES" | "NULLABLE_BYTES" | "RECORDS"
+}
