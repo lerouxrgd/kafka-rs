@@ -3,25 +3,14 @@ mod templates;
 use failure::Error;
 use heck::CamelCase;
 use lazy_static::*;
+use pest_derive::*;
 use pest::Parser;
 use regex::Regex;
 use templates::Templater;
 
-mod protocol {
-    use pest_derive::*;
-
-    #[derive(Parser)]
-    #[grammar = "protocol.pest"]
-    pub struct Parser;
-}
-
-mod bnf {
-    use pest_derive::*;
-
-    #[derive(Parser)]
-    #[grammar = "bnf.pest"]
-    pub struct Parser;
-}
+#[derive(Parser)]
+#[grammar = "protocol.pest"]
+pub struct ProtocolParser;
 
 fn capped_comment(text: &str, nb_indent: usize) -> String {
     lazy_static! {
@@ -47,7 +36,7 @@ fn wip_parsing() -> Result<(), Error> {
 
     let templater = Templater::new()?;
 
-    let file = protocol::Parser::parse(protocol::Rule::file, &raw)
+    let file = ProtocolParser::parse(Rule::file, &raw)
         .expect("Unsuccessful parsing")
         .next() // there is exactly one { file }
         .unwrap();
@@ -55,57 +44,57 @@ fn wip_parsing() -> Result<(), Error> {
     let mut skip_req_resp = 19;
     for target in file.into_inner() {
         match target.as_rule() {
-            protocol::Rule::error_codes => {
-                // let err_code_rows = target
-                //     .into_inner() // inner { table }
-                //     .next() // there is exactly one { table }
-                //     .unwrap()
-                //     .into_inner() // inner { tr }
-                //     .into_iter()
-                //     .map(|tr| {
-                //         let row = tr
-                //             .into_inner() // inner { td }
-                //             .into_iter()
-                //             .map(|td| td.into_inner().as_str()) // inner { content }
-                //             .collect::<Vec<_>>();
-                //         (
-                //             String::from(row[0]).to_camel_case(),
-                //             String::from(row[1]),
-                //             capped_comment(&format!("{} Retriable: {}.", row[3], row[2]), 4),
-                //         )
-                //     })
-                //     .collect::<Vec<_>>();
-                // let s = templater.str_err_codes(&err_code_rows);
-                // // println!("{}", s.unwrap());
+            Rule::error_codes => {
+                let err_code_rows = target
+                    .into_inner() // inner { table }
+                    .next() // there is exactly one { table }
+                    .unwrap()
+                    .into_inner() // inner { tr }
+                    .into_iter()
+                    .map(|tr| {
+                        let row = tr
+                            .into_inner() // inner { td }
+                            .into_iter()
+                            .map(|td| td.into_inner().as_str()) // inner { content }
+                            .collect::<Vec<_>>();
+                        (
+                            String::from(row[0]).to_camel_case(),
+                            String::from(row[1]),
+                            capped_comment(&format!("{} Retriable: {}.", row[3], row[2]), 4),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let s = templater.str_err_codes(&err_code_rows);
+                // println!("{}", s.unwrap());
             }
 
-            protocol::Rule::api_keys => {
-                // let api_key_rows = target
-                //     .into_inner() // inner { table }
-                //     .next() // there is exactly one { table }
-                //     .unwrap()
-                //     .into_inner() // inner { tr }
-                //     .into_iter()
-                //     .map(|tr| {
-                //         let row = tr
-                //             .into_inner() // inner { td }
-                //             .into_iter()
-                //             .map(|td| {
-                //                 td.into_inner() // inner { a }
-                //                     .next() // there is exactly one { a }
-                //                     .unwrap()
-                //                     .into_inner() // inner { content }
-                //                     .as_str()
-                //             })
-                //             .collect::<Vec<_>>();
-                //         (String::from(row[0]), String::from(row[1]))
-                //     })
-                //     .collect::<Vec<_>>();
-                // let s = templater.str_api_keys(&api_key_rows);
-                // // println!("{}", s.unwrap());
+            Rule::api_keys => {
+                let api_key_rows = target
+                    .into_inner() // inner { table }
+                    .next() // there is exactly one { table }
+                    .unwrap()
+                    .into_inner() // inner { tr }
+                    .into_iter()
+                    .map(|tr| {
+                        let row = tr
+                            .into_inner() // inner { td }
+                            .into_iter()
+                            .map(|td| {
+                                td.into_inner() // inner { a }
+                                    .next() // there is exactly one { a }
+                                    .unwrap()
+                                    .into_inner() // inner { content }
+                                    .as_str()
+                            })
+                            .collect::<Vec<_>>();
+                        (String::from(row[0]), String::from(row[1]))
+                    })
+                    .collect::<Vec<_>>();
+                let s = templater.str_api_keys(&api_key_rows);
+                // println!("{}", s.unwrap());
             }
 
-            protocol::Rule::req_resp => {
+            Rule::req_resp => {
                 if skip_req_resp > 0 {
                     skip_req_resp -= 1;
                     continue;
@@ -113,7 +102,7 @@ fn wip_parsing() -> Result<(), Error> {
 
                 for section in target.into_inner() {
                     match section.as_rule() {
-                        protocol::Rule::table => {
+                        Rule::table => {
                             let param_rows = section
                                 .into_inner() // inner { td }
                                 .map(|tr| {
@@ -128,7 +117,7 @@ fn wip_parsing() -> Result<(), Error> {
                             // println!("{:?}", param_rows);
                         }
 
-                        protocol::Rule::content => {
+                        Rule::content => {
                             println!("{}", section.as_str());
                             wip_bnf(section.as_str());
                             // println!("====> {:?}", section.as_str());
@@ -149,14 +138,15 @@ fn wip_parsing() -> Result<(), Error> {
 }
 
 fn wip_bnf(raw: &str) {
-    let spec = bnf::Parser::parse(bnf::Rule::spec, &raw)
-        .expect("Unsuccessful parsing")
-        .next() // there is exactly one { spec }
-        .unwrap();
+    let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout \n  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] \n    topic => STRING\n    num_partitions => INT32\n    replication_factor => INT16\n    replica_assignment => partition [replicas] \n      partition => INT32\n      replicas => INT32\n    config_entries => config_name config_value \n      config_name => STRING\n      config_value => NULLABLE_STRING\n  timeout => INT32";
 
-    println!("{:?}", spec);
+    let yo = raw.split('\n').collect::<Vec<_>>();
+    let mut it = yo.into_iter();
+    let first = it.next().expect(&format!("No first line: {:?}", raw));
+    println!("{:?}", first);
 }
 
 fn main() {
-    wip_parsing().unwrap();
+    // wip_parsing().unwrap();
+    wip_bnf("");
 }
