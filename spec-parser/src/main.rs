@@ -137,13 +137,33 @@ fn wip_parsing() -> Result<(), Error> {
     Ok(())
 }
 
+enum SpecVal<'a> {
+    Primitive(&'a str),
+    Struct(Vec<(&'a str, SpecVal<'a>)>),
+    Array(Vec<SpecVal<'a>>),
+}
+
 fn wip_bnf(raw: &str) {
     let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout \n  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] \n    topic => STRING\n    num_partitions => INT32\n    replication_factor => INT16\n    replica_assignment => partition [replicas] \n      partition => INT32\n      replicas => INT32\n    config_entries => config_name config_value \n      config_name => STRING\n      config_value => NULLABLE_STRING\n  timeout => INT32";
 
+    println!("{}", raw);
     let yo = raw.split('\n').collect::<Vec<_>>();
-    let mut it = yo.into_iter();
-    let first = it.next().expect(&format!("No first line: {:?}", raw));
-    println!("{:?}", first);
+    let (first, rest) = yo.split_first().unwrap();
+
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
+    }
+    let caps = RE.captures(first);
+    println!("{:?}", caps);
+
+    let mut curr_indent = 1;
+    fn yoyo<'a>(seed: Option<Vec<&'a str>>, pairs: Vec<&'a str>) -> SpecVal<'a> {
+        unimplemented!()
+    }
+
+    // TODO: generate seed from first line
+    let seed = vec!["[create_topic_requests]", "timeout"]; 
+    yoyo(Some(seed), rest.to_vec());
 }
 
 fn main() {
