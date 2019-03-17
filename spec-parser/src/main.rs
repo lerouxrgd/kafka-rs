@@ -8,6 +8,8 @@ use pest::Parser;
 use regex::Regex;
 use templates::Templater;
 
+// TODO: move all this in a dedicated `parser.rs` module
+
 #[derive(Parser)]
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
@@ -137,6 +139,7 @@ fn wip_parsing() -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug)]
 enum SpecVal<'a> {
     Primitive(&'a str),
     Struct(Vec<(&'a str, SpecVal<'a>)>),
@@ -156,14 +159,42 @@ fn wip_bnf(raw: &str) {
     let caps = RE.captures(first);
     println!("{:?}", caps);
 
-    let mut curr_indent = 1;
-    fn yoyo<'a>(seed: Option<Vec<&'a str>>, pairs: Vec<&'a str>) -> SpecVal<'a> {
-        unimplemented!()
+    struct Acc<'a> {
+        spec: Option<SpecVal<'a>>,
+        curr_indent: usize, // TODO: stack Vec<(int, &str)> int = nb_indent
+        fields: &'a Vec<&'a str>,
     }
 
-    // TODO: generate seed from first line
-    let seed = vec!["[create_topic_requests]", "timeout"]; 
-    yoyo(Some(seed), rest.to_vec());
+    fn yoyo(mut acc: Acc) -> Acc {
+        match acc {
+            Acc { spec: None, .. } => {
+                // TODO: real SpecVal based on acc.fields and/or acc.curr_indent
+                acc.spec = Some(SpecVal::Primitive("INT8"));
+                acc
+            }
+            _ => acc
+        }
+    };
+
+    let mut spec = SpecVal::Struct(vec![]);
+
+    let mut acc = Acc {
+        spec: None,
+        curr_indent: 1,
+        fields: &rest.to_vec(),
+    };
+
+    // TODO: generate root from `first` line
+    let root = vec!["[create_topic_requests]", "timeout"];
+    for field in root {
+        if let SpecVal::Struct(ref mut fields) = spec {
+            acc = yoyo(acc);
+            let spec = acc.spec.take().unwrap();
+            fields.push((field, spec));
+        }
+    }
+
+    println!("{:?}", spec);
 }
 
 fn main() {
