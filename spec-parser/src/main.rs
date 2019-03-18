@@ -139,6 +139,15 @@ fn wip_parsing() -> Result<(), Error> {
     Ok(())
 }
 
+fn type_for(name: &str) -> String {
+    let name = if name.chars().nth(0).expect("no first char") == '[' && name.chars().last().expect("no last char") == ']' {
+        &name[1..name.len()-1]
+    } else {
+        name
+    };
+    String::from(name).to_camel_case()
+}
+
 #[derive(Debug)]
 enum SpecVal<'a> {
     Primitive(&'a str),
@@ -159,20 +168,27 @@ fn wip_bnf(raw: &str) {
     let caps = RE.captures(first);
     println!("{:?}", caps);
 
+    // TODO: Use 2 stacks of Line { intent: 1, ret: Type { Primitive(""), Struct(vec!["a", "b"])}}
+    //         - `not_seen` = all lines (full at the beginning)
+    //         - `in_transit` = empty at the beginning
+    //       While same indent `not_seen` -> `in_transit`
+    //       Recur
     struct Acc<'a> {
         spec: Option<SpecVal<'a>>,
-        curr_indent: usize, // TODO: stack Vec<(int, &str)> int = nb_indent
+        curr_indent: usize,
         fields: &'a Vec<&'a str>,
     }
 
     fn yoyo(mut acc: Acc) -> Acc {
         match acc {
             Acc { spec: None, .. } => {
-                // TODO: real SpecVal based on acc.fields and/or acc.curr_indent
                 acc.spec = Some(SpecVal::Primitive("INT8"));
                 acc
             }
-            _ => acc
+            _ => {
+                acc.spec = Some(SpecVal::Primitive("INT16"));
+                acc
+            }
         }
     };
 
