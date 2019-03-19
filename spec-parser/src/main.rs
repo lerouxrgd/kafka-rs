@@ -3,8 +3,8 @@ mod templates;
 use failure::Error;
 use heck::CamelCase;
 use lazy_static::*;
-use pest_derive::*;
 use pest::Parser;
+use pest_derive::*;
 use regex::Regex;
 use templates::Templater;
 
@@ -140,8 +140,10 @@ fn wip_parsing() -> Result<(), Error> {
 }
 
 fn type_for(name: &str) -> String {
-    let name = if name.chars().nth(0).expect("no first char") == '[' && name.chars().last().expect("no last char") == ']' {
-        &name[1..name.len()-1]
+    let name = if name.chars().nth(0).expect("no first char") == '['
+        && name.chars().last().expect("no last char") == ']'
+    {
+        &name[1..name.len() - 1]
     } else {
         name
     };
@@ -163,20 +165,28 @@ fn wip_bnf(raw: &str) {
     let (first, rest) = yo.split_first().unwrap();
 
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
+        static ref RE: Regex =
+            Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
     }
     let caps = RE.captures(first);
     println!("{:?}", caps);
 
-    // TODO: Use 2 stacks of Line { intent: 1, ret: Type { Primitive(""), Struct(vec!["a", "b"])}}
-    //         - `not_seen` = all lines (full at the beginning)
-    //         - `in_transit` = empty at the beginning
-    //       While same indent `not_seen` -> `in_transit`
-    //       Recur
+    #[derive(Debug)]
+    enum Type<'a> {
+        Primitive(&'a str),
+        Struct(Vec<&'a str>),
+    }
+
+    #[derive(Debug)]
+    struct Line<'a> {
+        indent: usize,
+        ret: Type<'a>,
+    }
+
     struct Acc<'a> {
         spec: Option<SpecVal<'a>>,
-        curr_indent: usize,
-        fields: &'a Vec<&'a str>,
+        buffer: Vec<Line<'a>>,
+        input: Vec<Line<'a>>,
     }
 
     fn yoyo(mut acc: Acc) -> Acc {
@@ -194,10 +204,34 @@ fn wip_bnf(raw: &str) {
 
     let mut spec = SpecVal::Struct(vec![]);
 
+    let input = rest
+        .to_vec()
+        .into_iter()
+        .map(|s| {
+            let parts = s.split(" =>").collect::<Vec<_>>();
+
+            let indent = parts.get(0).unwrap().matches(' ').count();
+
+            let ret = parts
+                .get(1)
+                .unwrap()
+                .split(' ')
+                .filter(|p| *p != "")
+                .collect::<Vec<_>>();
+            let ret = if ret.len() == 1 {
+                Type::Primitive(ret[0])
+            } else {
+                Type::Struct(ret)
+            };
+
+            Line { indent, ret }
+        })
+        .collect::<Vec<_>>();
+
     let mut acc = Acc {
         spec: None,
-        curr_indent: 1,
-        fields: &rest.to_vec(),
+        buffer: vec![],
+        input,
     };
 
     // TODO: generate root from `first` line
@@ -210,6 +244,7 @@ fn wip_bnf(raw: &str) {
         }
     }
 
+    acc.input.into_iter().for_each(|x| println!("{:?}", x));
     println!("{:?}", spec);
 }
 
