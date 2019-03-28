@@ -151,10 +151,56 @@ fn type_for(name: &str) -> String {
 }
 
 #[derive(Debug)]
-enum SpecVal<'a> {
-    Primitive(&'a str),
-    Struct(Vec<(&'a str, SpecVal<'a>)>),
-    Array(Vec<SpecVal<'a>>),
+enum Primitive {
+    /// Represents a boolean value in a byte. Values 0 and 1 are used to
+    /// represent false and true respectively. When reading a boolean value,
+    /// any non-zero value is considered true.
+    Boolean,
+    /// Represents an integer between -2^7 and 2^7-1 inclusive.
+    Int8,
+    /// Represents an integer between -2^15 and 2^15-1 inclusive.
+    /// The values are encoded using two bytes in network byte order (big-endian).
+    Int16,
+    /// Represents an integer between -2^31 and 2^31-1 inclusive.
+    /// The values are encoded using four bytes in network byte order (big-endian).
+    Int32,
+    /// Represents an integer between -2^63 and 2^63-1 inclusive.
+    /// The values are encoded using eight bytes in network byte order (big-endian).
+    Int64,
+    /// Represents an integer between 0 and 2^32-1 inclusive.
+    /// The values are encoded using four bytes in network byte order (big-endian).
+    Uint32,
+    /// Represents an integer between -2^31 and 2^31-1 inclusive.
+    /// Encoding follows the variable-length zig-zag encoding from Google Protocol Buffers.
+    Varint,
+    /// Represents an integer between -2^63 and 2^63-1 inclusive.
+    /// Encoding follows the variable-length zig-zag encoding from Google Protocol Buffers.
+    Varlong,
+    /// Represents a sequence of characters. First the length N is given as an INT16.
+    /// Then N bytes follow which are the UTF-8 encoding of the character sequence.
+    /// Length must not be negative.
+    String,
+    /// Represents a sequence of characters or null. For non-null strings,
+    /// first the length N is given as an INT16. Then N bytes follow which are
+    /// the UTF-8 encoding of the character sequence. A null value is encoded with
+    /// length of -1 and there are no following bytes.
+    NullableString,
+    /// Represents a raw sequence of bytes. First the length N is given as an INT32.
+    /// Then N bytes follow.
+    Bytes,
+    /// Represents a raw sequence of bytes or null. For non-null values,
+    /// first the length N is given as an INT32. Then N bytes follow.
+    /// A null value is encoded with length of -1 and there are no following bytes.
+    NullableBytes,
+    /// Represents a sequence of Kafka records as  NULLABLE_BYTES.
+    Records,
+}
+
+#[derive(Debug)]
+enum FieldType<'a> {
+    Raw(Primitive),
+    Struct(Vec<(&'a str, FieldType<'a>)>),
+    Array(Vec<FieldType<'a>>),
 }
 
 fn wip_bnf(raw: &str) {
@@ -180,11 +226,12 @@ fn wip_bnf(raw: &str) {
     #[derive(Debug)]
     struct Line<'a> {
         indent: usize,
+        name: &'a str,
         ret: Type<'a>,
     }
 
     struct Acc<'a> {
-        spec: Option<SpecVal<'a>>,
+        spec: Option<FieldType<'a>>,
         buffer: Vec<Line<'a>>,
         input: Vec<Line<'a>>,
     }
@@ -192,17 +239,51 @@ fn wip_bnf(raw: &str) {
     fn yoyo(mut acc: Acc) -> Acc {
         match acc {
             Acc { spec: None, .. } => {
-                acc.spec = Some(SpecVal::Primitive("INT8"));
+                acc.spec = Some(FieldType::Raw(Primitive::Int8));
                 acc
             }
             _ => {
-                acc.spec = Some(SpecVal::Primitive("INT16"));
+                acc.spec = Some(FieldType::Raw(Primitive::Int16));
                 acc
             }
         }
     };
 
-    let mut spec = SpecVal::Struct(vec![]);
+    use std::collections::HashMap;
+
+    fn yuyu(input: Vec<Line>) -> HashMap<&str, FieldType> {
+        let specs = HashMap::new();
+        if input.len() == 0 {
+            return specs;
+        }
+
+        let mut buffer = vec![];
+        let mut indent = input[0].indent;
+
+        let mut it = input.into_iter();
+        while let Some(line) = it.next() {
+            if line.indent >= indent {
+                indent = line.indent;
+                buffer.push(line);
+            } else {
+                while buffer.len() > 0 && buffer.last().unwrap().indent <= indent {
+                    let line = buffer.pop().unwrap();
+                    println!("{:?}", line);
+                }
+                indent = line.indent;
+                buffer.push(line);
+            }
+        }
+
+        while buffer.len() > 0 && buffer.last().unwrap().indent <= indent {
+            let line = buffer.pop().unwrap();
+            println!("{:?}", line);
+        }
+
+        specs
+    }
+
+    let mut spec = FieldType::Struct(vec![]);
 
     let input = rest
         .to_vec()
@@ -211,6 +292,8 @@ fn wip_bnf(raw: &str) {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
             let indent = parts.get(0).unwrap().matches(' ').count();
+
+            let name = parts.get(0).unwrap().trim();
 
             let ret = parts
                 .get(1)
@@ -224,7 +307,7 @@ fn wip_bnf(raw: &str) {
                 Type::Struct(ret)
             };
 
-            Line { indent, ret }
+            Line { indent, name, ret }
         })
         .collect::<Vec<_>>();
 
@@ -237,14 +320,16 @@ fn wip_bnf(raw: &str) {
     // TODO: generate root from `first` line
     let root = vec!["[create_topic_requests]", "timeout"];
     for field in root {
-        if let SpecVal::Struct(ref mut fields) = spec {
+        if let FieldType::Struct(ref mut fields) = spec {
             acc = yoyo(acc);
             let spec = acc.spec.take().unwrap();
             fields.push((field, spec));
         }
     }
 
-    acc.input.into_iter().for_each(|x| println!("{:?}", x));
+    // acc.input.into_iter().for_each(|x| println!("{:?}", x));
+    yuyu(acc.input);
+
     println!("{:?}", spec);
 }
 
