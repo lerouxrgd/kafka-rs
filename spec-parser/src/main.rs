@@ -212,7 +212,7 @@ impl Primitive {
 #[derive(Debug)]
 enum Spec<'a> {
     Value(Primitive),
-    Array(Primitive),
+    Array(&'a Spec<'a>),
     Struct(Vec<(&'a str, Spec<'a>)>),
 }
 
