@@ -1,11 +1,14 @@
 mod templates;
 
+use std::collections::HashMap;
+
 use failure::Error;
 use heck::CamelCase;
 use lazy_static::*;
 use pest::Parser;
 use pest_derive::*;
 use regex::Regex;
+
 use templates::Templater;
 
 // TODO: move all this in a dedicated `parser.rs` module
@@ -139,17 +142,6 @@ fn wip_parsing() -> Result<(), Error> {
     Ok(())
 }
 
-fn type_for(name: &str) -> String {
-    let name = if name.chars().nth(0).expect("no first char") == '['
-        && name.chars().last().expect("no last char") == ']'
-    {
-        &name[1..name.len() - 1]
-    } else {
-        name
-    };
-    String::from(name).to_camel_case()
-}
-
 #[derive(Debug)]
 enum Primitive {
     /// Represents a boolean value in a byte. Values 0 and 1 are used to
@@ -196,71 +188,71 @@ enum Primitive {
     Records,
 }
 
+impl Primitive {
+    fn from(raw: &str) -> Primitive {
+        match raw {
+            "BOOLEAN" => Primitive::Boolean,
+            "INT8" => Primitive::Int8,
+            "INT16" => Primitive::Int16,
+            "INT32" => Primitive::Int32,
+            "INT64" => Primitive::Int64,
+            "UINT32" => Primitive::Uint32,
+            "VARINT" => Primitive::Varint,
+            "VARLONG" => Primitive::Varlong,
+            "STRING" => Primitive::String,
+            "NULLABLE_STRING" => Primitive::NullableString,
+            "BYTES" => Primitive::Bytes,
+            "NULLABLE_BYTES" => Primitive::NullableBytes,
+            "RECORDS" => Primitive::Records,
+            _ => unreachable!() // TODO: proper error
+        }
+    }
+}
+
 #[derive(Debug)]
-enum FieldType<'a> {
-    Raw(Primitive),
-    Struct(Vec<(&'a str, FieldType<'a>)>),
-    Array(Vec<FieldType<'a>>),
+enum Spec<'a> {
+    Value(Primitive),
+    Array(Primitive),
+    Struct(Vec<(&'a str, Spec<'a>)>),
 }
 
 fn wip_bnf(raw: &str) {
     let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout \n  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] \n    topic => STRING\n    num_partitions => INT32\n    replication_factor => INT16\n    replica_assignment => partition [replicas] \n      partition => INT32\n      replicas => INT32\n    config_entries => config_name config_value \n      config_name => STRING\n      config_value => NULLABLE_STRING\n  timeout => INT32";
 
-    println!("{}", raw);
-    let yo = raw.split('\n').collect::<Vec<_>>();
-    let (first, rest) = yo.split_first().unwrap();
-
     lazy_static! {
         static ref RE: Regex =
             Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
     }
-    let caps = RE.captures(first);
-    println!("{:?}", caps);
 
     #[derive(Debug)]
-    enum Type<'a> {
-        Primitive(&'a str),
-        Struct(Vec<&'a str>),
+    enum Field<'a> {
+        Simple(&'a str),
+        Array(&'a str),
+    }
+
+    #[derive(Debug)]
+    enum Kind<'a> {
+        Value(Primitive),
+        Struct(Vec<Field<'a>>),
     }
 
     #[derive(Debug)]
     struct Line<'a> {
         indent: usize,
         name: &'a str,
-        ret: Type<'a>,
+        kind: Kind<'a>,
     }
-
-    struct Acc<'a> {
-        spec: Option<FieldType<'a>>,
-        buffer: Vec<Line<'a>>,
-        input: Vec<Line<'a>>,
-    }
-
-    fn yoyo(mut acc: Acc) -> Acc {
-        match acc {
-            Acc { spec: None, .. } => {
-                acc.spec = Some(FieldType::Raw(Primitive::Int8));
-                acc
-            }
-            _ => {
-                acc.spec = Some(FieldType::Raw(Primitive::Int16));
-                acc
-            }
-        }
-    };
-
-    use std::collections::HashMap;
-
-    fn yuyu(input: Vec<Line>) -> HashMap<&str, FieldType> {
+    
+    fn fields_spec(lines: Vec<Line>) -> HashMap<&str, Spec> {
         let specs = HashMap::new();
-        if input.len() == 0 {
+        if lines.len() == 0 {
             return specs;
         }
 
         let mut buffer = vec![];
-        let mut indent = input[0].indent;
+        let mut indent = lines[0].indent;
 
-        let mut it = input.into_iter();
+        let mut it = lines.iter();
         while let Some(line) = it.next() {
             if line.indent >= indent {
                 indent = line.indent;
@@ -283,11 +275,26 @@ fn wip_bnf(raw: &str) {
         specs
     }
 
-    let mut spec = FieldType::Struct(vec![]);
+    fn field_from(name: &str) -> Field {
+        if name.chars().nth(0).expect("no first char") == '['
+            && name.chars().last().expect("no last char") == ']'
+        {
+            Field::Array(&name[1..name.len() - 1])
+        } else {
+            Field::Simple(name)
+        }
+    }
 
-    let input = rest
+    println!("{}", raw);
+    let yo = raw.split('\n').collect::<Vec<_>>();
+    let (first, rest) = yo.split_first().unwrap();
+    
+    let caps = RE.captures(first);
+    println!("{:?}", caps);
+    
+    let lines = rest
         .to_vec()
-        .into_iter()
+        .iter()
         .map(|s| {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
@@ -295,45 +302,33 @@ fn wip_bnf(raw: &str) {
 
             let name = parts.get(0).unwrap().trim();
 
-            let ret = parts
+            let kind = parts
                 .get(1)
                 .unwrap()
                 .split(' ')
                 .filter(|p| *p != "")
                 .collect::<Vec<_>>();
-            let ret = if ret.len() == 1 {
-                Type::Primitive(ret[0])
+            let kind = if kind.len() == 1 {
+                Kind::Value(Primitive::from(kind[0]))
             } else {
-                Type::Struct(ret)
+                let fields = kind.iter().map(|name| field_from(name)).collect::<Vec<_>>();
+                Kind::Struct(fields)
             };
 
-            Line { indent, name, ret }
+            Line { indent, name, kind }
         })
         .collect::<Vec<_>>();
 
-    let mut acc = Acc {
-        spec: None,
-        buffer: vec![],
-        input,
-    };
+    let fields_spec = fields_spec(lines);
 
+    let spec = Spec::Struct(vec![]);
     // TODO: generate root from `first` line
-    let root = vec!["[create_topic_requests]", "timeout"];
-    for field in root {
-        if let FieldType::Struct(ref mut fields) = spec {
-            acc = yoyo(acc);
-            let spec = acc.spec.take().unwrap();
-            fields.push((field, spec));
-        }
-    }
-
-    // acc.input.into_iter().for_each(|x| println!("{:?}", x));
-    yuyu(acc.input);
-
-    println!("{:?}", spec);
+    let root_fields = vec!["[create_topic_requests]", "timeout"];
+    // TODO: use `fields_spec` to generate final the `spec`
+    for field in root_fields {}
 }
 
 fn main() {
     // wip_parsing().unwrap();
-    wip_bnf("");
+    wip_bnf(""); // TODO: use real stuff from Rule::req_resp
 }
