@@ -142,7 +142,7 @@ fn wip_parsing() -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Primitive {
     /// Represents a boolean value in a byte. Values 0 and 1 are used to
     /// represent false and true respectively. When reading a boolean value,
@@ -204,15 +204,15 @@ impl Primitive {
             "BYTES" => Primitive::Bytes,
             "NULLABLE_BYTES" => Primitive::NullableBytes,
             "RECORDS" => Primitive::Records,
-            _ => unreachable!() // TODO: proper error
+            _ => unreachable!(), // TODO: proper error
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Spec<'a> {
     Value(Primitive),
-    Array(&'a Spec<'a>),
+    Array(Box<Spec<'a>>),
     Struct(Vec<(&'a str, Spec<'a>)>),
 }
 
@@ -224,27 +224,27 @@ fn wip_bnf(raw: &str) {
             Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     enum Field<'a> {
         Simple(&'a str),
         Array(&'a str),
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     enum Kind<'a> {
         Value(Primitive),
         Struct(Vec<Field<'a>>),
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct Line<'a> {
         indent: usize,
         name: &'a str,
         kind: Kind<'a>,
     }
-    
+
     fn fields_spec(lines: Vec<Line>) -> HashMap<&str, Spec> {
-        let specs = HashMap::new();
+        let mut specs = HashMap::new();
         if lines.len() == 0 {
             return specs;
         }
@@ -258,10 +258,13 @@ fn wip_bnf(raw: &str) {
                 indent = line.indent;
                 buffer.push(line);
             } else {
+                println!("--> ?? {:?}", buffer[0].indent);
                 while buffer.len() > 0 && buffer.last().unwrap().indent <= indent {
                     let line = buffer.pop().unwrap();
                     println!("{:?}", line);
+                    // specs = yoyo(line.clone(), specs);
                 }
+
                 indent = line.indent;
                 buffer.push(line);
             }
@@ -270,7 +273,47 @@ fn wip_bnf(raw: &str) {
         while buffer.len() > 0 && buffer.last().unwrap().indent <= indent {
             let line = buffer.pop().unwrap();
             println!("{:?}", line);
+            // specs = yoyo(line.clone(), specs);
         }
+
+        specs
+    }
+
+    fn yoyo<'a>(
+        line: Line<'a>,
+        mut specs: HashMap<&'a str, Spec<'a>>,
+    ) -> HashMap<&'a str, Spec<'a>> {
+        match line {
+            Line {
+                kind: Kind::Value(primitive),
+                name,
+                ..
+            } => {
+                specs.insert(name.clone(), Spec::Value(primitive));
+            }
+
+            Line {
+                kind: Kind::Struct(fields),
+                name,
+                ..
+            } => {
+                let mut inner_specs = vec![];
+                for field in fields {
+                    match field {
+                        Field::Simple(name) => {
+                            let spec = specs.get(name).unwrap();
+                            inner_specs.push((name, spec.clone()));
+                        }
+                        Field::Array(name) => {
+                            println!("-------> {}", name);
+                            let spec = specs.get(name).unwrap();
+                            inner_specs.push((name, Spec::Array(Box::new(spec.clone()))));
+                        }
+                    }
+                }
+                specs.insert(name, Spec::Struct(inner_specs));
+            }
+        };
 
         specs
     }
@@ -288,10 +331,10 @@ fn wip_bnf(raw: &str) {
     println!("{}", raw);
     let yo = raw.split('\n').collect::<Vec<_>>();
     let (first, rest) = yo.split_first().unwrap();
-    
+
     let caps = RE.captures(first);
     println!("{:?}", caps);
-    
+
     let lines = rest
         .to_vec()
         .iter()
@@ -320,6 +363,7 @@ fn wip_bnf(raw: &str) {
         .collect::<Vec<_>>();
 
     let fields_spec = fields_spec(lines);
+    println!("{:?}", fields_spec);
 
     let spec = Spec::Struct(vec![]);
     // TODO: generate root from `first` line
