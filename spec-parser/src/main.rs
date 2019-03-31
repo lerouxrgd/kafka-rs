@@ -238,50 +238,13 @@ fn wip_bnf(raw: &str) {
 
     #[derive(Debug, Clone)]
     struct Line<'a> {
-        indent: usize,
         name: &'a str,
         kind: Kind<'a>,
     }
 
-    fn fields_spec(lines: Vec<Line>) -> HashMap<&str, Spec> {
-        let mut specs = HashMap::new();
-        if lines.len() == 0 {
-            return specs;
-        }
-
-        let mut buffer = vec![];
-        let mut indent = lines[0].indent;
-
-        let mut it = lines.iter();
-        while let Some(line) = it.next() {
-            if line.indent >= indent {
-                indent = line.indent;
-                buffer.push(line);
-            } else {
-                println!("--> ?? {:?}", buffer[0].indent);
-                while buffer.len() > 0 && buffer.last().unwrap().indent <= indent {
-                    let line = buffer.pop().unwrap();
-                    println!("{:?}", line);
-                    // specs = yoyo(line.clone(), specs);
-                }
-
-                indent = line.indent;
-                buffer.push(line);
-            }
-        }
-
-        while buffer.len() > 0 && buffer.last().unwrap().indent <= indent {
-            let line = buffer.pop().unwrap();
-            println!("{:?}", line);
-            // specs = yoyo(line.clone(), specs);
-        }
-
-        specs
-    }
-
-    fn yoyo<'a>(
-        line: Line<'a>,
+    fn insert_spec<'a>(
         mut specs: HashMap<&'a str, Spec<'a>>,
+        line: Line<'a>,
     ) -> HashMap<&'a str, Spec<'a>> {
         match line {
             Line {
@@ -298,6 +261,7 @@ fn wip_bnf(raw: &str) {
                 ..
             } => {
                 let mut inner_specs = vec![];
+                
                 for field in fields {
                     match field {
                         Field::Simple(name) => {
@@ -305,12 +269,12 @@ fn wip_bnf(raw: &str) {
                             inner_specs.push((name, spec.clone()));
                         }
                         Field::Array(name) => {
-                            println!("-------> {}", name);
                             let spec = specs.get(name).unwrap();
                             inner_specs.push((name, Spec::Array(Box::new(spec.clone()))));
                         }
                     }
                 }
+                
                 specs.insert(name, Spec::Struct(inner_specs));
             }
         };
@@ -328,48 +292,67 @@ fn wip_bnf(raw: &str) {
         }
     }
 
+    fn kind_from(raw: &str) -> Kind {
+        let kind = raw
+            .split(' ')
+            .filter(|p| *p != "")
+            .collect::<Vec<_>>();
+        if kind.len() == 1 {
+            Kind::Value(Primitive::from(kind[0]))
+        } else {
+            let fields = kind.iter().map(|name| field_from(name)).collect::<Vec<_>>();
+            Kind::Struct(fields)
+        }
+    }
+
     println!("{}", raw);
     let yo = raw.split('\n').collect::<Vec<_>>();
     let (first, rest) = yo.split_first().unwrap();
 
-    let caps = RE.captures(first);
+    let caps = RE.captures(first).unwrap();
     println!("{:?}", caps);
 
-    let lines = rest
+    let root_kind = caps.get(5).map_or("", |m| m.as_str().trim());
+    let root_kind = kind_from(root_kind);
+
+    let mut lines = rest
         .to_vec()
         .iter()
         .map(|s| {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
-            let indent = parts.get(0).unwrap().matches(' ').count();
-
             let name = parts.get(0).unwrap().trim();
 
-            let kind = parts
-                .get(1)
-                .unwrap()
-                .split(' ')
-                .filter(|p| *p != "")
-                .collect::<Vec<_>>();
-            let kind = if kind.len() == 1 {
-                Kind::Value(Primitive::from(kind[0]))
-            } else {
-                let fields = kind.iter().map(|name| field_from(name)).collect::<Vec<_>>();
-                Kind::Struct(fields)
-            };
+            let kind = kind_from(parts.get(1).unwrap());
 
-            Line { indent, name, kind }
+            Line { name, kind }
         })
         .collect::<Vec<_>>();
 
-    let fields_spec = fields_spec(lines);
-    println!("{:?}", fields_spec);
+    let mut fields_spec = HashMap::new();
+    lines.reverse();
+    for line in lines {
+        fields_spec = insert_spec(fields_spec, line.clone()); 
+    }
+    
+    let mut spec = vec![];
+    if let Kind::Struct(fields) = root_kind {
+        for field in fields {
+            match field {
+                Field::Simple(name) => {
+                    let field_spec = fields_spec.get(name).unwrap();
+                    spec.push((name, field_spec.clone()));
+                }
+                Field::Array(name) => {
+                    let field_spec = fields_spec.get(name).unwrap();
+                    spec.push((name, Spec::Array(Box::new(field_spec.clone()))));
+                }
+            }
+        }
+    }
+    let spec = Spec::Struct(spec);
 
-    let spec = Spec::Struct(vec![]);
-    // TODO: generate root from `first` line
-    let root_fields = vec!["[create_topic_requests]", "timeout"];
-    // TODO: use `fields_spec` to generate final the `spec`
-    for field in root_fields {}
+    println!("{:?}", spec);
 }
 
 fn main() {
