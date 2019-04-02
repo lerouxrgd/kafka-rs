@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use failure::{Error, Fail};
 use heck::CamelCase;
 use lazy_static::*;
-use pest::Parser;
+use pest::Parser as _;
 use pest_derive::*;
 use regex::Regex;
 
-use crate::templates::Templater;
+use crate::common::{ApiKeyRows, ErrorCodeRows};
 
 /// Describes errors happened while parsing protocol specs.
 #[derive(Fail, Debug)]
@@ -20,13 +20,120 @@ impl ParserError {
     }
 }
 
-macro_rules! err(
-    ($($arg:tt)*) => (Err(ParserError::new(format!($($arg)*))))
-);
-
 #[derive(Parser)]
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
+
+pub struct Parser {
+    err_code_rows: ErrorCodeRows,
+    api_key_rows: ApiKeyRows,
+}
+
+impl Parser {
+    fn new() -> Result<Self, Error> {
+        let raw = include_str!("protocol.html");
+        let parsed_file = ProtocolParser::parse(Rule::file, &raw)?
+            .next() // there is exactly one { file }
+            .expect("Unreachable file rule");
+
+        let mut err_code_rows = vec![];
+        let mut api_key_rows = vec![];
+
+        let mut skip_req_resp = 16;
+        for target in parsed_file.into_inner() {
+            match target.as_rule() {
+                Rule::error_codes => {
+                    err_code_rows = target
+                        .into_inner() // inner { table }
+                        .next() // there is exactly one { table }
+                        .expect("Unreachable error_codes table rule")
+                        .into_inner() // inner { tr }
+                        .into_iter()
+                        .map(|tr| {
+                            let row = tr
+                                .into_inner() // inner { td }
+                                .into_iter()
+                                .map(|td| td.into_inner().as_str()) // inner { content }
+                                .collect::<Vec<_>>();
+                            (
+                                String::from(row[0]).to_camel_case(),
+                                String::from(row[1]),
+                                capped_comment(&format!("{} Retriable: {}.", row[3], row[2]), 4),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                }
+
+                Rule::api_keys => {
+                    api_key_rows = target
+                        .into_inner() // inner { table }
+                        .next() // there is exactly one { table }
+                        .expect("Unreachable api_keys table rule")
+                        .into_inner() // inner { tr }
+                        .into_iter()
+                        .map(|tr| {
+                            let row = tr
+                                .into_inner() // inner { td }
+                                .into_iter()
+                                .map(|td| {
+                                    td.into_inner() // inner { a }
+                                        .next() // there is exactly one { a }
+                                        .expect("Unreachable api_keys a rule")
+                                        .into_inner() // inner { content }
+                                        .as_str()
+                                })
+                                .collect::<Vec<_>>();
+                            (String::from(row[0]), String::from(row[1]))
+                        })
+                        .collect::<Vec<_>>();
+                }
+
+                Rule::req_resp => {
+                    // TODO: should only skip 1 (skipping more than 1 is just for dev)
+                    if skip_req_resp > 0 {
+                        skip_req_resp -= 1;
+                        continue;
+                    }
+
+                    for section in target.into_inner() {
+                        match section.as_rule() {
+                            Rule::table => {
+                                let param_rows = section
+                                    .into_inner() // inner { td }
+                                    .map(|tr| {
+                                        let row = tr
+                                            .into_inner() // inner { td }
+                                            .into_iter()
+                                            .map(|td| td.into_inner().as_str()) // inner { content }
+                                            .collect::<Vec<_>>();
+                                        (String::from(row[0]), String::from(row[1]))
+                                    })
+                                    .collect::<Vec<_>>();
+                                // println!("{:?}", param_rows);
+                            }
+
+                            Rule::content => {
+                                let spec = parse_struct_spec(section.as_str());
+                                println!("{:?}", spec);
+                            }
+
+                            _ => unreachable!(), // no other rules
+                        }
+                    }
+
+                    break;
+                }
+
+                _ => (),
+            }
+        }
+
+        Ok(Parser {
+            err_code_rows,
+            api_key_rows,
+        })
+    }
+}
 
 fn capped_comment(text: &str, nb_indent: usize) -> String {
     lazy_static! {
@@ -44,119 +151,6 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
         .collect::<Vec<_>>()
         .as_slice()
         .join("\n")
-}
-
-// TODO: define a Parser struct, initialized w/ file rule
-//       split wip parsing into 3 methods (err_codes, api_keys, req_resp)
-//       have the req_resp returned as an iterator over all values ?
-//       define intermediate structs (return types) ? here ?
-//       use templater in parsers tests ?
-
-fn wip_parsing() -> Result<(), Error> {
-    // wget https://kafka.apache.org/21/protocol.html
-    let raw = include_str!("protocol.html");
-
-    let templater = Templater::new()?;
-
-    let file = ProtocolParser::parse(Rule::file, &raw)
-        .expect("Unsuccessful parsing")
-        .next() // there is exactly one { file }
-        .unwrap();
-
-    let mut skip_req_resp = 19;
-    for target in file.into_inner() {
-        match target.as_rule() {
-            Rule::error_codes => {
-                let err_code_rows = target
-                    .into_inner() // inner { table }
-                    .next() // there is exactly one { table }
-                    .unwrap()
-                    .into_inner() // inner { tr }
-                    .into_iter()
-                    .map(|tr| {
-                        let row = tr
-                            .into_inner() // inner { td }
-                            .into_iter()
-                            .map(|td| td.into_inner().as_str()) // inner { content }
-                            .collect::<Vec<_>>();
-                        (
-                            String::from(row[0]).to_camel_case(),
-                            String::from(row[1]),
-                            capped_comment(&format!("{} Retriable: {}.", row[3], row[2]), 4),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let s = templater.str_err_codes(&err_code_rows);
-                // println!("{}", s.unwrap());
-            }
-
-            Rule::api_keys => {
-                let api_key_rows = target
-                    .into_inner() // inner { table }
-                    .next() // there is exactly one { table }
-                    .unwrap()
-                    .into_inner() // inner { tr }
-                    .into_iter()
-                    .map(|tr| {
-                        let row = tr
-                            .into_inner() // inner { td }
-                            .into_iter()
-                            .map(|td| {
-                                td.into_inner() // inner { a }
-                                    .next() // there is exactly one { a }
-                                    .unwrap()
-                                    .into_inner() // inner { content }
-                                    .as_str()
-                            })
-                            .collect::<Vec<_>>();
-                        (String::from(row[0]), String::from(row[1]))
-                    })
-                    .collect::<Vec<_>>();
-                let s = templater.str_api_keys(&api_key_rows);
-                // println!("{}", s.unwrap());
-            }
-
-            Rule::req_resp => {
-                if skip_req_resp > 0 {
-                    skip_req_resp -= 1;
-                    continue;
-                }
-
-                for section in target.into_inner() {
-                    match section.as_rule() {
-                        Rule::table => {
-                            let param_rows = section
-                                .into_inner() // inner { td }
-                                .map(|tr| {
-                                    let row = tr
-                                        .into_inner() // inner { td }
-                                        .into_iter()
-                                        .map(|td| td.into_inner().as_str()) // inner { content }
-                                        .collect::<Vec<_>>();
-                                    (String::from(row[0]), String::from(row[1]))
-                                })
-                                .collect::<Vec<_>>();
-                            // println!("{:?}", param_rows);
-                        }
-
-                        Rule::content => {
-                            println!("{}", section.as_str());
-                            wip_bnf(section.as_str());
-                            // println!("====> {:?}", section.as_str());
-                        }
-
-                        _ => unreachable!(), // no other rules
-                    }
-                }
-
-                break;
-            }
-
-            _ => (),
-        }
-    }
-
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -221,7 +215,7 @@ impl Primitive {
             "BYTES" => Primitive::Bytes,
             "NULLABLE_BYTES" => Primitive::NullableBytes,
             "RECORDS" => Primitive::Records,
-            _ => unreachable!(), // TODO: proper error
+            _ => unreachable!("Unknown primitive: {}", raw),
         }
     }
 }
@@ -233,9 +227,7 @@ enum Spec<'a> {
     Struct(Vec<(&'a str, Spec<'a>)>),
 }
 
-fn wip_bnf(raw: &str) {
-    let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout \n  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] \n    topic => STRING\n    num_partitions => INT32\n    replication_factor => INT16\n    replica_assignment => partition [replicas] \n      partition => INT32\n      replicas => INT32\n    config_entries => config_name config_value \n      config_name => STRING\n      config_value => NULLABLE_STRING\n  timeout => INT32";
-
+fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
     lazy_static! {
         static ref RE: Regex =
             Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
@@ -262,7 +254,7 @@ fn wip_bnf(raw: &str) {
     fn insert_spec<'a>(
         mut specs: HashMap<&'a str, Spec<'a>>,
         line: Line<'a>,
-    ) -> HashMap<&'a str, Spec<'a>> {
+    ) -> Result<HashMap<&'a str, Spec<'a>>, Error> {
         match line {
             Line {
                 kind: Kind::Value(primitive),
@@ -278,25 +270,27 @@ fn wip_bnf(raw: &str) {
                 ..
             } => {
                 let mut inner_specs = vec![];
-
                 for field in fields {
                     match field {
                         Field::Simple(name) => {
-                            let spec = specs.get(name).unwrap();
+                            let spec = specs.get(name).ok_or_else(|| {
+                                ParserError::new(format!("Missing spec for field: {}", name))
+                            })?;
                             inner_specs.push((name, spec.clone()));
                         }
                         Field::Array(name) => {
-                            let spec = specs.get(name).unwrap();
+                            let spec = specs.get(name).ok_or_else(|| {
+                                ParserError::new(format!("Missing spec for field: {}", name))
+                            })?;
                             inner_specs.push((name, Spec::Array(Box::new(spec.clone()))));
                         }
                     }
                 }
-
                 specs.insert(name, Spec::Struct(inner_specs));
             }
         };
 
-        specs
+        Ok(specs)
     }
 
     fn field_from(name: &str) -> Field {
@@ -310,10 +304,7 @@ fn wip_bnf(raw: &str) {
     }
 
     fn kind_from(raw: &str) -> Kind {
-        let kind = raw
-            .split(' ')
-            .filter(|p| *p != "")
-            .collect::<Vec<_>>();
+        let kind = raw.split(' ').filter(|s| *s != "").collect::<Vec<_>>();
         if kind.len() == 1 {
             Kind::Value(Primitive::from(kind[0]))
         } else {
@@ -323,24 +314,27 @@ fn wip_bnf(raw: &str) {
     }
 
     println!("{}", raw);
-    let yo = raw.split('\n').collect::<Vec<_>>();
-    let (first, rest) = yo.split_first().unwrap();
+    let raw_lines = raw.split('\n').collect::<Vec<_>>();
+    let (first, rest) = raw_lines
+        .split_first()
+        .ok_or_else(|| ParserError::new(format!("Not enough raw lines: {:?}", raw_lines)))?;
 
-    let caps = RE.captures(first).unwrap();
+    let caps = RE
+        .captures(first)
+        .ok_or_else(|| ParserError::new(format!("First line didn't match: {:?} {}", *RE, first)))?;
     println!("{:?}", caps);
 
-    let root_kind = caps.get(5).map_or("", |m| m.as_str().trim());
-    let root_kind = kind_from(root_kind);
+    let root = kind_from(caps.get(5).map_or("", |m| m.as_str().trim()));
 
     let mut lines = rest
         .to_vec()
         .iter()
+        .filter(|s| **s != "")
         .map(|s| {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
-            let name = parts.get(0).unwrap().trim();
-
-            let kind = kind_from(parts.get(1).unwrap());
+            let name = parts.get(0).expect(&format!("Invalid line: {}", s)).trim();
+            let kind = kind_from(parts.get(1).expect(&format!("Invalid line: {}", s)));
 
             Line { name, kind }
         })
@@ -349,27 +343,30 @@ fn wip_bnf(raw: &str) {
     let mut fields_spec = HashMap::new();
     lines.reverse();
     for line in lines {
-        fields_spec = insert_spec(fields_spec, line.clone());
+        fields_spec = insert_spec(fields_spec, line.clone())?;
     }
 
-    let mut spec = vec![];
-    if let Kind::Struct(fields) = root_kind {
+    let mut specs = vec![];
+    if let Kind::Struct(fields) = root {
         for field in fields {
             match field {
                 Field::Simple(name) => {
-                    let field_spec = fields_spec.get(name).unwrap();
-                    spec.push((name, field_spec.clone()));
+                    let field_spec = fields_spec.get(name).ok_or_else(|| {
+                        ParserError::new(format!("Missing spec for root field: {}", name))
+                    })?;
+                    specs.push((name, field_spec.clone()));
                 }
                 Field::Array(name) => {
-                    let field_spec = fields_spec.get(name).unwrap();
-                    spec.push((name, Spec::Array(Box::new(field_spec.clone()))));
+                    let field_spec = fields_spec.get(name).ok_or_else(|| {
+                        ParserError::new(format!("Missing spec for root field: {}", name))
+                    })?;
+                    specs.push((name, Spec::Array(Box::new(field_spec.clone()))));
                 }
             }
         }
     }
-    let spec = Spec::Struct(spec);
 
-    println!("{:?}", spec);
+    Ok(Spec::Struct(specs))
 }
 
 #[cfg(test)]
@@ -377,6 +374,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_name() {
+    fn error_codes() {
+        let parser = Parser::new().unwrap();
+        for row in parser.err_code_rows {
+            println!("{:?}", row);
+        }
+    }
+
+    #[test]
+    fn api_keys() {
+        let parser = Parser::new().unwrap();
+        for row in parser.api_key_rows {
+            println!("{:?}", row);
+        }
+    }
+
+    #[test]
+    fn req_resp() {
+        let _parser = Parser::new().unwrap();
+    }
+
+    #[test]
+    fn spec() {
+        let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout \n  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] \n    topic => STRING\n    num_partitions => INT32\n    replication_factor => INT16\n    replica_assignment => partition [replicas] \n      partition => INT32\n      replicas => INT32\n    config_entries => config_name config_value \n      config_name => STRING\n      config_value => NULLABLE_STRING\n  timeout => INT32";
+
+        let spec = parse_struct_spec(raw);
+        println!("{:?}", spec);
+    }
+
+    #[test]
+    fn split() {
+        let raw = "ListGroups Request (Version: 0) => \n";
+        let raw_lines = raw.split('\n').collect::<Vec<_>>();
+        let (first, rest) = raw_lines.split_first().unwrap();
+        println!("--------> {:?}", first); // == raw w/o \n
+        println!("--------> {:?}", rest); // == [""]
     }
 }
