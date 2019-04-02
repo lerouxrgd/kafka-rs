@@ -153,7 +153,7 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
         .join("\n")
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Primitive {
     /// Represents a boolean value in a byte. Values 0 and 1 are used to
     /// represent false and true respectively. When reading a boolean value,
@@ -220,14 +220,14 @@ impl Primitive {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Spec<'a> {
     Value(Primitive),
     Array(Box<Spec<'a>>),
     Struct(Vec<(&'a str, Spec<'a>)>),
 }
 
-fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
+fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
     lazy_static! {
         static ref RE: Regex =
             Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
@@ -239,10 +239,37 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
         Array(&'a str),
     }
 
+    impl<'a> Field<'a> {
+        fn from(name: &str) -> Field {
+            if name.chars().nth(0).expect("no first char") == '['
+                && name.chars().last().expect("no last char") == ']'
+            {
+                Field::Array(&name[1..name.len() - 1])
+            } else {
+                Field::Simple(name)
+            }
+        }
+    }
+
     #[derive(Debug, Clone)]
     enum Kind<'a> {
         Value(Primitive),
         Struct(Vec<Field<'a>>),
+    }
+
+    impl<'a> Kind<'a> {
+        fn from(raw: &str) -> Kind {
+            let kind = raw.split(' ').filter(|s| *s != "").collect::<Vec<_>>();
+            if kind.len() == 1 {
+                Kind::Value(Primitive::from(kind[0]))
+            } else {
+                let fields = kind
+                    .iter()
+                    .map(|name| Field::from(name))
+                    .collect::<Vec<_>>();
+                Kind::Struct(fields)
+            }
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -293,27 +320,6 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
         Ok(specs)
     }
 
-    fn field_from(name: &str) -> Field {
-        if name.chars().nth(0).expect("no first char") == '['
-            && name.chars().last().expect("no last char") == ']'
-        {
-            Field::Array(&name[1..name.len() - 1])
-        } else {
-            Field::Simple(name)
-        }
-    }
-
-    fn kind_from(raw: &str) -> Kind {
-        let kind = raw.split(' ').filter(|s| *s != "").collect::<Vec<_>>();
-        if kind.len() == 1 {
-            Kind::Value(Primitive::from(kind[0]))
-        } else {
-            let fields = kind.iter().map(|name| field_from(name)).collect::<Vec<_>>();
-            Kind::Struct(fields)
-        }
-    }
-
-    println!("{}", raw);
     let raw_lines = raw.split('\n').collect::<Vec<_>>();
     let (first, rest) = raw_lines
         .split_first()
@@ -322,9 +328,16 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
     let caps = RE
         .captures(first)
         .ok_or_else(|| ParserError::new(format!("First line didn't match: {:?} {}", *RE, first)))?;
-    println!("{:?}", caps);
 
-    let root = kind_from(caps.get(5).map_or("", |m| m.as_str().trim()));
+    let name = match (caps.get(1), caps.get(2), caps.get(4)) {
+        (Some(name), Some(genre), Some(version)) => {
+            format!("{}{}V{}", name.as_str(), genre.as_str(), version.as_str())
+        }
+        (Some(name), Some(genre), None) => format!("{}{}", name.as_str(), genre.as_str()),
+        _ => return Err(ParserError::new("boom").into()),
+    };
+
+    let root = Kind::from(caps.get(5).map_or("", |m| m.as_str().trim()));
 
     let mut lines = rest
         .to_vec()
@@ -334,7 +347,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
             let name = parts.get(0).expect(&format!("Invalid line: {}", s)).trim();
-            let kind = kind_from(parts.get(1).expect(&format!("Invalid line: {}", s)));
+            let kind = Kind::from(parts.get(1).expect(&format!("Invalid line: {}", s)));
 
             Line { name, kind }
         })
@@ -366,7 +379,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<Spec<'a>, Error> {
         }
     }
 
-    Ok(Spec::Struct(specs))
+    Ok((name, Spec::Struct(specs)))
 }
 
 #[cfg(test)]
@@ -396,18 +409,52 @@ mod tests {
 
     #[test]
     fn spec() {
-        let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout \n  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] \n    topic => STRING\n    num_partitions => INT32\n    replication_factor => INT16\n    replica_assignment => partition [replicas] \n      partition => INT32\n      replicas => INT32\n    config_entries => config_name config_value \n      config_name => STRING\n      config_value => NULLABLE_STRING\n  timeout => INT32";
+        use super::Spec::*;
 
-        let spec = parse_struct_spec(raw);
-        println!("{:?}", spec);
+        let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout 
+  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] 
+    topic => STRING
+    num_partitions => INT32
+    replication_factor => INT16
+    replica_assignment => partition [replicas] 
+      partition => INT32
+      replicas => INT32
+    config_entries => config_name config_value 
+      config_name => STRING
+      config_value => NULLABLE_STRING
+  timeout => INT32";
+
+        let (name, spec) = parse_struct_spec(raw).unwrap();
+
+        assert_eq!("CreateTopicsRequestV0", name);
+        assert_eq!(
+            Struct(vec![
+                (
+                    "create_topic_requests",
+                    Array(Box::new(Struct(vec![
+                        ("topic", Value(Primitive::String)),
+                        ("num_partitions", Value(Primitive::Int32)),
+                        ("replication_factor", Value(Primitive::Int16)),
+                        (
+                            "replica_assignment",
+                            Array(Box::new(Struct(vec![
+                                ("partition", Value(Primitive::Int32)),
+                                ("replicas", Array(Box::new(Value(Primitive::Int32))))
+                            ])))
+                        ),
+                        (
+                            "config_entries",
+                            Array(Box::new(Struct(vec![
+                                ("config_name", Value(Primitive::String)),
+                                ("config_value", Value(Primitive::NullableString))
+                            ])))
+                        )
+                    ])))
+                ),
+                ("timeout", Value(Primitive::Int32))
+            ]),
+            spec
+        );
     }
 
-    #[test]
-    fn split() {
-        let raw = "ListGroups Request (Version: 0) => \n";
-        let raw_lines = raw.split('\n').collect::<Vec<_>>();
-        let (first, rest) = raw_lines.split_first().unwrap();
-        println!("--------> {:?}", first); // == raw w/o \n
-        println!("--------> {:?}", rest); // == [""]
-    }
 }
