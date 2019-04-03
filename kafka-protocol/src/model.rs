@@ -79,3 +79,39 @@ pub struct ApiVersion {
     pub min_version: i16,
     pub max_version: i16,
 }
+
+#[derive(Debug, Serialize)]
+enum CreateTopicsRequest {
+    V0 {
+        create_topic_requests: Vec<create_topic_request::v0::CreateTopicsRequests>,
+        timeout: i32,
+    }
+}
+
+mod create_topic_request {
+    pub mod v0 {
+        use serde::Serialize;
+        use crate::types::*;
+
+        #[derive(Debug, Serialize)]
+        pub struct CreateTopicsRequests {
+            pub topic: String,
+            pub num_partitions: i32,
+            pub replication_factor: i16,
+            pub replica_assignment: Vec<ReplicaAssignment>,
+            pub config_entries: Vec<ConfigEntries>,
+        }
+
+        #[derive(Debug, Serialize)]
+        pub struct ReplicaAssignment {
+            pub partition: i32,
+            pub replicas: Vec<i32>,
+        }
+
+        #[derive(Debug, Serialize)]
+        pub struct ConfigEntries {
+            pub config_name: String,
+            pub config_value: NullableString,
+        }
+    }
+}
