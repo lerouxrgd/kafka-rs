@@ -39,7 +39,7 @@ impl Parser {
         let mut err_code_rows = vec![];
         let mut api_key_rows = vec![];
 
-        let mut skip_req_resp = 16;
+        let mut skip_req_resp = 19;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -98,7 +98,7 @@ impl Parser {
                     for section in target.into_inner() {
                         match section.as_rule() {
                             Rule::table => {
-                                let param_rows = section
+                                let fields_doc = section
                                     .into_inner() // inner { td }
                                     .map(|tr| {
                                         let row = tr
@@ -108,13 +108,13 @@ impl Parser {
                                             .collect::<Vec<_>>();
                                         (String::from(row[0]), String::from(row[1]))
                                     })
-                                    .collect::<Vec<_>>();
-                                // println!("{:?}", param_rows);
+                                    .collect::<HashMap<_, _>>();
+                                // println!("{:?}", fields_doc);
                             }
 
                             Rule::content => {
-                                let spec = parse_struct_spec(section.as_str());
-                                println!("{:?}", spec);
+                                let (name, spec) = parse_struct_spec(section.as_str())?;
+                                println!("{}\n{:?}", name, spec);
                             }
 
                             _ => unreachable!(), // no other rules
@@ -334,7 +334,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
             format!("{}{}V{}", name.as_str(), genre.as_str(), version.as_str())
         }
         (Some(name), Some(genre), None) => format!("{}{}", name.as_str(), genre.as_str()),
-        _ => return Err(ParserError::new("boom").into()),
+        _ => return Err(ParserError::new(format!("Invalid name match: {:?}", caps)).into()),
     };
 
     let root = Kind::from(caps.get(5).map_or("", |m| m.as_str().trim()));
