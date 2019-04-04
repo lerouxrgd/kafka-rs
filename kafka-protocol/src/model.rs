@@ -77,7 +77,7 @@ pub struct ApiVersion {
     pub max_version: i16,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum CreateTopicsRequest {
     V0 {
         create_topic_requests: Vec<create_topic_request::v0::CreateTopicsRequests>,
@@ -87,7 +87,7 @@ enum CreateTopicsRequest {
 
 mod create_topic_request {
     pub mod v0 {
-        #[derive(Debug, serde::Serialize)]
+        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct CreateTopicsRequests {
             pub topic: String,
             pub num_partitions: i32,
@@ -96,16 +96,34 @@ mod create_topic_request {
             pub config_entries: Vec<ConfigEntries>,
         }
 
-        #[derive(Debug, serde::Serialize)]
+        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct ReplicaAssignment {
             pub partition: i32,
             pub replicas: Vec<i32>,
         }
 
-        #[derive(Debug, serde::Serialize)]
+        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct ConfigEntries {
             pub config_name: String,
             pub config_value: crate::types::NullableString,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codec::{encode_single, decode_single};
+
+    #[test]
+    fn complex_req() {
+        let v1 = CreateTopicsRequest::V0 {
+            create_topic_requests: vec![],
+            timeout: 0,
+        };
+
+        let bytes = encode_single(&v1).unwrap();
+        let v2 = decode_single::<CreateTopicsRequest>(&bytes).unwrap();
+        assert_eq!(v1, v2);
     }
 }
