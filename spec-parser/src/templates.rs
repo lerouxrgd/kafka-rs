@@ -1,6 +1,8 @@
 use failure::{Error, Fail, SyncFailure};
 use tera::{Context, Tera};
 
+use crate::common::{ApiKeyRows, ErrorCodeRows};
+
 pub const ERROR_CODES_TERA: &str = "error_codes.tera";
 pub const ERROR_CODES_TEMPLATE: &str = r#"
 ///  Numeric codes to indicate what problem occurred on the Kafka server.
@@ -61,10 +63,6 @@ impl<T, E> ResultExt<T, E> for Result<T, E> {
         self.map_err(SyncFailure::new)
     }
 }
-
-type ErrorCodeRows = Vec<(String, String, String)>;
-
-type ApiKeyRows = Vec<(String, String)>;
 
 /// The main, stateless, component for templating. Current implementation uses Tera.
 /// Its responsability is to generate String of Rust code/types for Kafka API.

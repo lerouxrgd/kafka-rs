@@ -11,25 +11,20 @@ file = { SOI ~ doctype ~ html ~ EOI }
         script  = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
         h_end   = _{ "</html>" }
 
-target = _{ error_codes | api_keys | ANY }
+target = _{ error_codes | api_keys | req_resp | ANY }
 
-error_codes = {
-    "<h5>" ~
-    "<a id=\"protocol_error_codes\"" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" ~
-    "</h5>" ~
-    any_but_table ~
-    table
-}
+error_codes = { "<h5>" ~ id_error_codes ~ "</h5>" ~ any_but_table ~ table }
+    id_error_codes = _{ "<a id=\"protocol_error_codes\"" ~ end_tag_a }
 
-api_keys = {
-    "<h5>" ~
-    "<a id=\"protocol_api_keys\"" ~ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" ~
-    "</h5>" ~
-    any_but_table ~
-    table
-}
+api_keys = { "<h5>" ~ id_api_keys ~ "</h5>" ~ any_but_table ~ table }
+    id_api_keys = _{ "<a id=\"protocol_api_keys\"" ~ end_tag_a }
+
+req_resp = { "<h5>" ~ named_tag_a ~ "</h5>" ~ any_but_pre ~ spec }
+    named_tag_a = _{ "<a name=" ~ end_tag_a }
 
 any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
+any_but_pre   = _{ (!"<pre>" ~ ANY )* }
+end_tag_a     = _{ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" }
 
 table = { tstart ~ thead ~ tinner ~ tend }
     tstart = _{ "<table class=\"data-table\">" ~ "<tbody>" }
@@ -38,13 +33,15 @@ table = { tstart ~ thead ~ tinner ~ tend }
     tinner = _{ (!"</table>" ~ tr)* }
         tr =  { "<tr>" ~ (!"</tr>" ~ td)* ~ "</tr>" }
         td =  { "<td>" ~ (a | content) ~ "</td>" }
-         a =  { "<a" ~ (!">" ~ ANY)* ~ ">" ~ content ~ "</a>" }
+         a =  { "<a" ~ (!">" ~ ("=" | ANY))* ~ ">" ~ content ~ "</a>" }
     tend   = _{ "</table>" }
+
+spec = _{ "<pre>" ~ content ~ "</pre>" ~ table }
+
+content = { (!"</" ~ char)* }
 
 char = {
     ASCII_ALPHANUMERIC |
-    "_" | "-" | "." | "," | "'" | ":" | "/" | "|" |
-    "(" | ")" | "[" | "]" | "{" | "}"
+    "_" | "-" | "." | "," | "'" | ":" | "/" | "|" | "=" |
+    "(" | ")" | "[" | "]" | "{" | "}" | "<" | ">"
 }
-
-content = { char* }

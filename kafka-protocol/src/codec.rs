@@ -3,7 +3,9 @@ use std::io::prelude::*;
 use std::rc::Rc;
 use std::{error, fmt, io};
 
-use serde::de::{self, Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{
+    self, Deserialize, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
+};
 use serde::ser::{self, Serialize};
 
 use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
@@ -120,11 +122,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_u8(self, _: u8) -> Result<()> {
+    fn serialize_u8(self, _val: u8) -> Result<()> {
         Err(ser::Error::custom("not part of Kafka binary protocol: u8"))
     }
 
-    fn serialize_u16(self, _: u16) -> Result<()> {
+    fn serialize_u16(self, _val: u16) -> Result<()> {
         Err(ser::Error::custom("not part of Kafka binary protocol: u16"))
     }
 
@@ -133,19 +135,19 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_u64(self, v: u64) -> Result<()> {
+    fn serialize_u64(self, _val: u64) -> Result<()> {
         unimplemented!()
     }
 
-    fn serialize_f32(self, v: f32) -> Result<()> {
+    fn serialize_f32(self, _val: f32) -> Result<()> {
         unimplemented!()
     }
 
-    fn serialize_f64(self, v: f64) -> Result<()> {
+    fn serialize_f64(self, _val: f64) -> Result<()> {
         unimplemented!()
     }
 
-    fn serialize_char(self, v: char) -> Result<()> {
+    fn serialize_char(self, _val: char) -> Result<()> {
         unimplemented!()
     }
 
@@ -174,7 +176,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         ))
     }
 
-    fn serialize_some<T>(self, _: &T) -> Result<()>
+    fn serialize_some<T>(self, _val: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
@@ -187,20 +189,20 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         unimplemented!()
     }
 
-    fn serialize_unit_struct(self, _: &'static str) -> Result<()> {
+    fn serialize_unit_struct(self, _val: &'static str) -> Result<()> {
         unimplemented!()
     }
 
     fn serialize_unit_variant(
         self,
-        _: &'static str,
-        index: u32,
-        variant: &'static str,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
     ) -> Result<()> {
         unimplemented!()
     }
 
-    fn serialize_newtype_struct<T>(self, _: &'static str, val: &T) -> Result<()>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, _val: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
@@ -209,10 +211,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_newtype_variant<T>(
         self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        val: &T,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _val: &T,
     ) -> Result<()>
     where
         T: Serialize + ?Sized,
@@ -235,44 +237,44 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         }
     }
 
-    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
         unimplemented!()
     }
 
     fn serialize_tuple_struct(
         self,
-        _: &'static str,
-        len: usize,
+        _name: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
         unimplemented!()
     }
 
     fn serialize_tuple_variant(
         self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        _: usize,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
         unimplemented!()
     }
 
-    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
         unimplemented!()
     }
 
-    fn serialize_struct(self, _: &'static str, len: usize) -> Result<Self::SerializeStruct> {
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
         Ok(self)
     }
 
     fn serialize_struct_variant(
         self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        _: usize,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        unimplemented!()
+        Ok(self)
     }
 }
 
@@ -296,7 +298,7 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_element<T>(&mut self, val: &T) -> Result<()>
+    fn serialize_element<T>(&mut self, _val: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -312,7 +314,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, val: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _val: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -328,7 +330,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, val: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _val: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -344,14 +346,14 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_key<T>(&mut self, key: &T) -> Result<()>
+    fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
         unimplemented!()
     }
 
-    fn serialize_value<T>(&mut self, val: &T) -> Result<()>
+    fn serialize_value<T>(&mut self, _val: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -367,7 +369,7 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, _: &'static str, val: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _name: &'static str, val: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
@@ -383,15 +385,15 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, key: &'static str, val: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _name: &'static str, val: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        unimplemented!()
+        val.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 }
 
@@ -494,7 +496,7 @@ fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
     }
 }
 
-pub fn read_resp<R, H, T>(rdr: &mut R) -> Result<(H, T)>
+pub fn read_resp<R, H, T>(rdr: &mut R, version: Option<usize>) -> Result<(H, T)>
 where
     R: io::Read,
     H: de::DeserializeOwned,
@@ -505,15 +507,15 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_resp::<H, T>(&bytes)
+    decode_resp::<H, T>(&bytes, version)
 }
 
-pub fn decode_resp<'a, H, T>(input: &'a [u8]) -> Result<(H, T)>
+pub fn decode_resp<'a, H, T>(input: &'a [u8], version: Option<usize>) -> Result<(H, T)>
 where
     H: Deserialize<'a>,
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_bytes(input);
+    let mut deserializer = Deserializer::from_bytes(input, version);
 
     let header = H::deserialize(&mut deserializer)?;
     let resp = T::deserialize(&mut deserializer)?;
@@ -528,7 +530,7 @@ where
     }
 }
 
-pub fn read_single<R, T>(rdr: &mut R) -> Result<T>
+pub fn read_single<R, T>(rdr: &mut R, version: Option<usize>) -> Result<T>
 where
     R: io::Read,
     T: de::DeserializeOwned,
@@ -538,14 +540,14 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_single::<T>(&bytes)
+    decode_single::<T>(&bytes, version)
 }
 
-pub fn decode_single<'a, T>(input: &'a [u8]) -> Result<T>
+pub fn decode_single<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_bytes(input);
+    let mut deserializer = Deserializer::from_bytes(input, version);
     let resp = T::deserialize(&mut deserializer)?;
 
     if deserializer.input.len() == 0 {
@@ -561,13 +563,15 @@ where
 pub struct Deserializer<'de> {
     input: &'de [u8],
     identifiers: Vec<&'de str>,
+    version: Option<usize>,
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn from_bytes(input: &'de [u8]) -> Self {
+    pub fn from_bytes(input: &'de [u8], version: Option<usize>) -> Self {
         Deserializer {
             input,
             identifiers: vec![],
+            version,
         }
     }
 }
@@ -648,14 +652,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_i64(i64::from_be_bytes(bytes))
     }
 
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u8<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -676,7 +680,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_u32(u32::from_be_bytes(bytes))
     }
 
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u64<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -697,14 +701,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         unimplemented!()
     }
 
-    fn deserialize_char<V>(self, _: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_str<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -729,7 +733,8 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
         if self.input.len() < size {
             return Err(de::Error::custom(format!(
-                "not enough bytes to deserialize string size of length {}",
+                "not enough bytes ({}) to deserialize string of length {}",
+                self.input.len(),
                 size
             )));
         }
@@ -751,35 +756,35 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         val
     }
 
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_unit_struct<V>(self, _: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_unit_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_newtype_struct<V>(self, _: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -803,21 +808,26 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_seq(SeqDeserializer::new(&mut self, len))
     }
 
-    fn deserialize_tuple<V>(self, _: usize, visitor: V) -> Result<V::Value>
+    fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, visitor: V) -> Result<V::Value>
+    fn deserialize_tuple_struct<V>(
+        self,
+        _name: &'static str,
+        _len: usize,
+        _visitor: V,
+    ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -826,7 +836,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_struct<V>(
         mut self,
-        _: &'static str,
+        _name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
@@ -838,14 +848,24 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_enum<V>(
         self,
-        _: &'static str,
-        _variants: &'static [&'static str],
-        _visitor: V,
+        _name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        let variant = match self.version {
+            Some(i) => variants.get(i).ok_or_else::<Error, _>(|| {
+                de::Error::custom(format!("no variant {} within {:?}", i, variants))
+            }),
+            _ => Err(de::Error::custom(format!(
+                "invalid variant version: {:?}",
+                self.version
+            ))),
+        }?;
+        let value = visitor.visit_enum(Enum::new(self, variant))?;
+        Ok(value)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
@@ -859,14 +879,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         }
     }
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         unimplemented!()
     }
 
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -934,6 +954,63 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
         V: DeserializeSeed<'de>,
     {
         seed.deserialize(&mut *self.de)
+    }
+}
+
+struct Enum<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    variant: &'static str,
+}
+
+impl<'a, 'de> Enum<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, variant: &'static str) -> Self {
+        Enum { de, variant }
+    }
+}
+
+impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
+    type Error = Error;
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        self.de.identifiers.push(self.variant);
+        let val = seed.deserialize(&mut *self.de)?;
+        Ok((val, self))
+    }
+}
+
+impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        for field in fields {
+            self.de.identifiers.push(field);
+        }
+        de::Deserializer::deserialize_struct(self.de, self.variant, fields, visitor)
     }
 }
 
@@ -1258,7 +1335,7 @@ mod tests {
     fn serde_bool() {
         let v1 = true;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<bool>(&bytes).unwrap();
+        let v2 = decode_single::<bool>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
     }
 
@@ -1266,27 +1343,27 @@ mod tests {
     fn serde_integers() {
         let v1 = 13 as i8;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i8>(&bytes).unwrap();
+        let v2 = decode_single::<i8>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as i16;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i16>(&bytes).unwrap();
+        let v2 = decode_single::<i16>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as i32;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i32>(&bytes).unwrap();
+        let v2 = decode_single::<i32>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as i64;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i64>(&bytes).unwrap();
+        let v2 = decode_single::<i64>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as u32;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<u32>(&bytes).unwrap();
+        let v2 = decode_single::<u32>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
     }
 
@@ -1302,12 +1379,12 @@ mod tests {
 
         let i = Varint(3);
         let bytes = encode_single(&i).unwrap();
-        let j = decode_single::<Varint>(&bytes).unwrap();
+        let j = decode_single::<Varint>(&bytes, None).unwrap();
         assert_eq!(i, j);
 
         let i = Varlong(-3);
         let bytes = encode_single(&i).unwrap();
-        let j = decode_single::<Varlong>(&bytes).unwrap();
+        let j = decode_single::<Varlong>(&bytes, None).unwrap();
         assert_eq!(i, j);
     }
 
@@ -1315,17 +1392,17 @@ mod tests {
     fn serde_strings() {
         let s1 = String::from("yes");
         let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<String>(&bytes).unwrap();
+        let s2 = decode_single::<String>(&bytes, None).unwrap();
         assert_eq!(s1, s2);
 
         let s1 = NullableString::from("yes");
         let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes, None).unwrap();
         assert_eq!(s1, s2);
 
         let s1 = NullableString(None);
         let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes, None).unwrap();
         assert_eq!(s1, s2);
     }
 
@@ -1333,17 +1410,17 @@ mod tests {
     fn serde_bytes() {
         let b1 = Bytes(vec![1, 2, 3]);
         let bytes = encode_single(&b1).unwrap();
-        let b2 = decode_single::<Bytes>(&bytes).unwrap();
+        let b2 = decode_single::<Bytes>(&bytes, None).unwrap();
         assert_eq!(b1, b2);
 
         let b1 = NullableBytes::from(vec![1, 2, 3]);
         let bytes = encode_single(&b1).unwrap();
-        let b2 = decode_single::<NullableBytes>(&bytes).unwrap();
+        let b2 = decode_single::<NullableBytes>(&bytes, None).unwrap();
         assert_eq!(b1, b2);
 
         let b1 = NullableBytes(None);
         let bytes = encode_single(&b1).unwrap();
-        let b2 = decode_single::<NullableBytes>(&bytes).unwrap();
+        let b2 = decode_single::<NullableBytes>(&bytes, None).unwrap();
         assert_eq!(b1, b2);
     }
 
@@ -1375,7 +1452,7 @@ mod tests {
         ]);
 
         let (header, resp) =
-            read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes).unwrap();
+            read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes, Some(0)).unwrap();
         println!("{:?}", header);
         println!("{:?}", resp);
     }
