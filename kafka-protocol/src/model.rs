@@ -65,16 +65,22 @@ pub struct HeaderResponse {
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct ApiVersionsResponse {
-    pub error_code: i16,
-    pub api_versions: Vec<ApiVersion>,
+pub enum ApiVersionsResponse {
+    V0 {
+        error_code: i16,
+        api_versions: Vec<api_versions_response::v0::ApiVersion>,
+    },
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct ApiVersion {
-    pub api_key: ApiKey,
-    pub min_version: i16,
-    pub max_version: i16,
+pub mod api_versions_response {
+    pub mod v0 {
+        #[derive(Debug, serde::Deserialize)]
+        pub struct ApiVersion {
+            pub api_key: crate::model::ApiKey,
+            pub min_version: i16,
+            pub max_version: i16,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -85,7 +91,7 @@ enum CreateTopicsRequest {
     },
 }
 
-mod create_topic_request {
+pub mod create_topic_request {
     pub mod v0 {
         #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct CreateTopicsRequests {
@@ -112,18 +118,31 @@ mod create_topic_request {
 
 #[cfg(test)]
 mod tests {
+    use super::create_topic_request::v0::*;
     use super::*;
-    use crate::codec::{encode_single, decode_single};
+    use crate::codec::{decode_single, encode_single};
 
     #[test]
     fn complex_req() {
-        let v1 = CreateTopicsRequest::V0 {
-            create_topic_requests: vec![],
+        let val1 = CreateTopicsRequest::V0 {
+            create_topic_requests: vec![CreateTopicsRequests {
+                topic: "topic".to_owned(),
+                num_partitions: 32,
+                replication_factor: 16,
+                replica_assignment: vec![ReplicaAssignment {
+                    partition: 12,
+                    replicas: vec![1],
+                }],
+                config_entries: vec![ConfigEntries {
+                    config_name: "default".to_owned(),
+                    config_value: crate::types::NullableString(None),
+                }],
+            }],
             timeout: 0,
         };
 
-        let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<CreateTopicsRequest>(&bytes).unwrap();
-        assert_eq!(v1, v2);
+        let bytes = encode_single(&val1).unwrap();
+        let val2 = decode_single::<CreateTopicsRequest>(&bytes, Some(0)).unwrap();
+        assert_eq!(val1, val2);
     }
 }

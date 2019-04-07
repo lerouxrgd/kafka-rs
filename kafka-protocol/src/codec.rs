@@ -3,7 +3,9 @@ use std::io::prelude::*;
 use std::rc::Rc;
 use std::{error, fmt, io};
 
-use serde::de::{self, Deserialize, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{
+    self, Deserialize, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
+};
 use serde::ser::{self, Serialize};
 
 use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
@@ -267,12 +269,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_struct_variant(
         self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        _: usize,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        unimplemented!()
+        Ok(self)
     }
 }
 
@@ -387,11 +389,11 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        unimplemented!()
+        val.serialize(&mut **self)
     }
 
     fn end(self) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 }
 
@@ -494,7 +496,7 @@ fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
     }
 }
 
-pub fn read_resp<R, H, T>(rdr: &mut R) -> Result<(H, T)>
+pub fn read_resp<R, H, T>(rdr: &mut R, version: Option<usize>) -> Result<(H, T)>
 where
     R: io::Read,
     H: de::DeserializeOwned,
@@ -505,15 +507,15 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_resp::<H, T>(&bytes)
+    decode_resp::<H, T>(&bytes, version)
 }
 
-pub fn decode_resp<'a, H, T>(input: &'a [u8]) -> Result<(H, T)>
+pub fn decode_resp<'a, H, T>(input: &'a [u8], version: Option<usize>) -> Result<(H, T)>
 where
     H: Deserialize<'a>,
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_bytes(input);
+    let mut deserializer = Deserializer::from_bytes(input, version);
 
     let header = H::deserialize(&mut deserializer)?;
     let resp = T::deserialize(&mut deserializer)?;
@@ -528,7 +530,7 @@ where
     }
 }
 
-pub fn read_single<R, T>(rdr: &mut R) -> Result<T>
+pub fn read_single<R, T>(rdr: &mut R, version: Option<usize>) -> Result<T>
 where
     R: io::Read,
     T: de::DeserializeOwned,
@@ -538,14 +540,14 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_single::<T>(&bytes)
+    decode_single::<T>(&bytes, version)
 }
 
-pub fn decode_single<'a, T>(input: &'a [u8]) -> Result<T>
+pub fn decode_single<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_bytes(input);
+    let mut deserializer = Deserializer::from_bytes(input, version);
     let resp = T::deserialize(&mut deserializer)?;
 
     if deserializer.input.len() == 0 {
@@ -561,13 +563,15 @@ where
 pub struct Deserializer<'de> {
     input: &'de [u8],
     identifiers: Vec<&'de str>,
+    version: Option<usize>,
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn from_bytes(input: &'de [u8]) -> Self {
+    pub fn from_bytes(input: &'de [u8], version: Option<usize>) -> Self {
         Deserializer {
             input,
             identifiers: vec![],
+            version,
         }
     }
 }
@@ -729,7 +733,8 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
         if self.input.len() < size {
             return Err(de::Error::custom(format!(
-                "not enough bytes to deserialize string size of length {}",
+                "not enough bytes ({}) to deserialize string of length {}",
+                self.input.len(),
                 size
             )));
         }
@@ -838,14 +843,24 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_enum<V>(
         self,
-        _: &'static str,
-        _variants: &'static [&'static str],
-        _visitor: V,
+        _name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        let variant = match self.version {
+            Some(i) => variants.get(i).ok_or_else::<Error, _>(|| {
+                de::Error::custom(format!("no variant {} within {:?}", i, variants))
+            }),
+            _ => Err(de::Error::custom(format!(
+                "invalid variant version: {:?}",
+                self.version
+            ))),
+        }?;
+        let value = visitor.visit_enum(Enum::new(self, variant))?;
+        Ok(value)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
@@ -934,6 +949,63 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
         V: DeserializeSeed<'de>,
     {
         seed.deserialize(&mut *self.de)
+    }
+}
+
+struct Enum<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    variant: &'static str,
+}
+
+impl<'a, 'de> Enum<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, variant: &'static str) -> Self {
+        Enum { de, variant }
+    }
+}
+
+impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
+    type Error = Error;
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        self.de.identifiers.push(self.variant);
+        let val = seed.deserialize(&mut *self.de)?;
+        Ok((val, self))
+    }
+}
+
+impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        for field in fields {
+            self.de.identifiers.push(field);
+        }
+        de::Deserializer::deserialize_struct(self.de, self.variant, fields, visitor)
     }
 }
 
@@ -1258,7 +1330,7 @@ mod tests {
     fn serde_bool() {
         let v1 = true;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<bool>(&bytes).unwrap();
+        let v2 = decode_single::<bool>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
     }
 
@@ -1266,27 +1338,27 @@ mod tests {
     fn serde_integers() {
         let v1 = 13 as i8;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i8>(&bytes).unwrap();
+        let v2 = decode_single::<i8>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as i16;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i16>(&bytes).unwrap();
+        let v2 = decode_single::<i16>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as i32;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i32>(&bytes).unwrap();
+        let v2 = decode_single::<i32>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as i64;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<i64>(&bytes).unwrap();
+        let v2 = decode_single::<i64>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
 
         let v1 = 13 as u32;
         let bytes = encode_single(&v1).unwrap();
-        let v2 = decode_single::<u32>(&bytes).unwrap();
+        let v2 = decode_single::<u32>(&bytes, None).unwrap();
         assert_eq!(v1, v2);
     }
 
@@ -1302,12 +1374,12 @@ mod tests {
 
         let i = Varint(3);
         let bytes = encode_single(&i).unwrap();
-        let j = decode_single::<Varint>(&bytes).unwrap();
+        let j = decode_single::<Varint>(&bytes, None).unwrap();
         assert_eq!(i, j);
 
         let i = Varlong(-3);
         let bytes = encode_single(&i).unwrap();
-        let j = decode_single::<Varlong>(&bytes).unwrap();
+        let j = decode_single::<Varlong>(&bytes, None).unwrap();
         assert_eq!(i, j);
     }
 
@@ -1315,17 +1387,17 @@ mod tests {
     fn serde_strings() {
         let s1 = String::from("yes");
         let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<String>(&bytes).unwrap();
+        let s2 = decode_single::<String>(&bytes, None).unwrap();
         assert_eq!(s1, s2);
 
         let s1 = NullableString::from("yes");
         let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes, None).unwrap();
         assert_eq!(s1, s2);
 
         let s1 = NullableString(None);
         let bytes = encode_single(&s1).unwrap();
-        let s2 = decode_single::<NullableString>(&bytes).unwrap();
+        let s2 = decode_single::<NullableString>(&bytes, None).unwrap();
         assert_eq!(s1, s2);
     }
 
@@ -1333,17 +1405,17 @@ mod tests {
     fn serde_bytes() {
         let b1 = Bytes(vec![1, 2, 3]);
         let bytes = encode_single(&b1).unwrap();
-        let b2 = decode_single::<Bytes>(&bytes).unwrap();
+        let b2 = decode_single::<Bytes>(&bytes, None).unwrap();
         assert_eq!(b1, b2);
 
         let b1 = NullableBytes::from(vec![1, 2, 3]);
         let bytes = encode_single(&b1).unwrap();
-        let b2 = decode_single::<NullableBytes>(&bytes).unwrap();
+        let b2 = decode_single::<NullableBytes>(&bytes, None).unwrap();
         assert_eq!(b1, b2);
 
         let b1 = NullableBytes(None);
         let bytes = encode_single(&b1).unwrap();
-        let b2 = decode_single::<NullableBytes>(&bytes).unwrap();
+        let b2 = decode_single::<NullableBytes>(&bytes, None).unwrap();
         assert_eq!(b1, b2);
     }
 
@@ -1375,7 +1447,7 @@ mod tests {
         ]);
 
         let (header, resp) =
-            read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes).unwrap();
+            read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes, Some(0)).unwrap();
         println!("{:?}", header);
         println!("{:?}", resp);
     }
