@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use failure::{Error, Fail};
 use heck::CamelCase;
@@ -39,7 +39,7 @@ impl Parser {
         let mut err_code_rows = vec![];
         let mut api_key_rows = vec![];
 
-        let mut skip_req_resp = 19;
+        let mut skip_req_resp = 0;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -89,7 +89,7 @@ impl Parser {
                 }
 
                 Rule::req_resp => {
-                    // TODO: should only skip 1 (skipping more than 1 is just for dev)
+                    // TODO: remove that, skipping stuff is just for dev
                     if skip_req_resp > 0 {
                         skip_req_resp -= 1;
                         continue;
@@ -109,7 +109,7 @@ impl Parser {
                                         (String::from(row[0]), String::from(row[1]))
                                     })
                                     .collect::<HashMap<_, _>>();
-                                // println!("{:?}", fields_doc);
+                                println!("{:?}", fields_doc);
                             }
 
                             Rule::content => {
@@ -120,8 +120,6 @@ impl Parser {
                             _ => unreachable!(), // no other rules
                         }
                     }
-
-                    break;
                 }
 
                 _ => (),
@@ -218,6 +216,33 @@ impl Primitive {
             _ => unreachable!("Unknown primitive: {}", raw),
         }
     }
+
+    fn is_valid(raw: &str) -> bool {
+        lazy_static! {
+            static ref VALIDS: HashSet<String> = {
+                let s: HashSet<_> = vec![
+                    "BOOLEAN",
+                    "INT8",
+                    "INT16",
+                    "INT32",
+                    "INT64",
+                    "UINT32",
+                    "VARINT",
+                    "VARLONG",
+                    "STRING",
+                    "NULLABLE_STRING",
+                    "BYTES",
+                    "NULLABLE_BYTES",
+                    "RECORDS",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+                s
+            };
+        }
+        VALIDS.contains(raw)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -240,7 +265,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
     }
 
     impl<'a> Field<'a> {
-        fn from(name: &str) -> Field {
+        fn new(name: &str) -> Field {
             if name.chars().nth(0).expect("no first char") == '['
                 && name.chars().last().expect("no last char") == ']'
             {
@@ -258,15 +283,28 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
     }
 
     impl<'a> Kind<'a> {
-        fn from(raw: &str) -> Kind {
+        fn for_root(raw: &str) -> Kind {
+            let fields = raw
+                .split(' ')
+                .filter(|s| *s != "")
+                .collect::<Vec<_>>()
+                .iter()
+                .map(|name| Field::new(name))
+                .collect::<Vec<_>>();
+            Kind::Struct(fields)
+        }
+
+        fn for_field(raw: &str) -> Kind {
             let kind = raw.split(' ').filter(|s| *s != "").collect::<Vec<_>>();
             if kind.len() == 1 {
-                Kind::Value(Primitive::from(kind[0]))
+                // TODO: handle ARRAY(INT32)
+                if Primitive::is_valid(kind[0]) {
+                    Kind::Value(Primitive::from(kind[0]))
+                } else {
+                    Kind::Struct(vec![Field::new(kind[0])])
+                }
             } else {
-                let fields = kind
-                    .iter()
-                    .map(|name| Field::from(name))
-                    .collect::<Vec<_>>();
+                let fields = kind.iter().map(|name| Field::new(name)).collect::<Vec<_>>();
                 Kind::Struct(fields)
             }
         }
@@ -337,7 +375,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
         _ => return Err(ParserError::new(format!("Invalid name match: {:?}", caps)).into()),
     };
 
-    let root = Kind::from(caps.get(5).map_or("", |m| m.as_str().trim()));
+    let root = Kind::for_root(caps.get(5).map_or("", |m| m.as_str().trim()));
 
     let mut lines = rest
         .to_vec()
@@ -347,7 +385,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
             let name = parts.get(0).expect(&format!("Invalid line: {}", s)).trim();
-            let kind = Kind::from(parts.get(1).expect(&format!("Invalid line: {}", s)));
+            let kind = Kind::for_field(parts.get(1).expect(&format!("Invalid line: {}", s)));
 
             Line { name, kind }
         })

@@ -19,7 +19,7 @@ error_codes = { "<h5>" ~ id_error_codes ~ "</h5>" ~ any_but_table ~ table }
 api_keys = { "<h5>" ~ id_api_keys ~ "</h5>" ~ any_but_table ~ table }
     id_api_keys = _{ "<a id=\"protocol_api_keys\"" ~ end_tag_a }
 
-req_resp = { "<h5>" ~ named_tag_a ~ "</h5>" ~ any_but_pre ~ spec }
+req_resp = { "<h5>" ~ named_tag_a ~ "</h5>" ~ (!"<h5>" ~ any_but_pre ~ spec)+ }
     named_tag_a = _{ "<a name=" ~ end_tag_a }
 
 any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
