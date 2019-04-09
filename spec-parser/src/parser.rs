@@ -279,6 +279,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
     #[derive(Debug, Clone)]
     enum Kind<'a> {
         Value(Primitive),
+        Array(Primitive),
         Struct(Vec<Field<'a>>),
     }
 
@@ -295,13 +296,29 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
         }
 
         fn for_field(raw: &str) -> Kind {
+            lazy_static! {
+                static ref ARRAY: Regex = Regex::new(r"ARRAY\((.+?)\)").expect("Invalid regex");
+            }
+
             let kind = raw.split(' ').filter(|s| *s != "").collect::<Vec<_>>();
             if kind.len() == 1 {
-                // TODO: handle ARRAY(INT32)
-                if Primitive::is_valid(kind[0]) {
-                    Kind::Value(Primitive::from(kind[0]))
+                let field = kind[0];
+                if Primitive::is_valid(field) {
+                    Kind::Value(Primitive::from(field))
+                } else if ARRAY.is_match(field) {
+                    let inner = ARRAY
+                        .captures(field)
+                        .expect("unreachable field kind parsing")
+                        .get(1)
+                        .expect("unreachable field kind capture")
+                        .as_str();
+                    if Primitive::is_valid(inner) {
+                        Kind::Array(Primitive::from(inner))
+                    } else {
+                        Kind::Struct(vec![Field::new(inner)])
+                    }
                 } else {
-                    Kind::Struct(vec![Field::new(kind[0])])
+                    Kind::Struct(vec![Field::new(field)])
                 }
             } else {
                 let fields = kind.iter().map(|name| Field::new(name)).collect::<Vec<_>>();
@@ -327,6 +344,14 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, Spec<'a>), Error> {
                 ..
             } => {
                 specs.insert(name.clone(), Spec::Value(primitive));
+            }
+
+            Line {
+                kind: Kind::Array(primitive),
+                name,
+                ..
+            } => {
+                specs.insert(name.clone(), Spec::Array(Box::new(Spec::Value(primitive))));
             }
 
             Line {
