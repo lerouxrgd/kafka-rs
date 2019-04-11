@@ -3,6 +3,21 @@ use tera::{Context, Tera};
 
 use crate::common::{ApiKeyRows, ErrorCodeRows};
 
+pub const HEADERS: &str = r#"
+#[derive(Debug, serde::Serialize)]
+pub struct HeaderRequest {
+    pub api_key: ApiKey,
+    pub api_version: i16,
+    pub correlation_id: i32,
+    pub client_id: crate::types::NullableString,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct HeaderResponse {
+    pub correlation: i32,
+}
+"#;
+
 pub const ERROR_CODES_TERA: &str = "error_codes.tera";
 pub const ERROR_CODES_TEMPLATE: &str = r#"
 ///  Numeric codes to indicate what problem occurred on the Kafka server.
@@ -24,6 +39,31 @@ pub const API_KEYS_TEMPLATE: &str = r#"
 pub enum ApiKey {
     {%- for k in api_keys %}
     {{ k.0 }} = {{ k.1 }},
+    {%- endfor %}
+}
+"#;
+
+pub const STRUCT_TERA: &str = "struct.tera";
+pub const STRUCT_TEMPLATE: &str = r#"
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+enum {{ name_enum }} {
+    {%- for version in versions %}
+    V{{ loop.index }} {
+        ???: ???,
+    },
+    {%- endfor %}
+}
+
+pub mod {{ name_module }} {
+    {%- for version in versions %}
+    pub mod v{{ loop.index }} {
+        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct {{ ??? }} {
+{{ ??? }}
+            pub ???: ???,
+        }
+        {%- endfor %}
+    }
     {%- endfor %}
 }
 "#;
