@@ -6,12 +6,19 @@ file = { SOI ~ doctype ~ html ~ EOI }
     html    = _{ h_start ~ head ~ body ~ script* ~ h_end } 
         h_start = _{ "<html" ~ (!">" ~ ANY)* ~ ">" }
         head    = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
-        body    = _{ "<body>" ~ (!"</body>" ~ div )* ~ "</body>" }
-            div = _{ "<div" ~ (!">" ~ ANY)* ~ ">" ~ (!"</div>" ~ (div | target))* ~ "</div>" }
+        body    = _{ "<body>" ~
+                     (!("<h5>" ~ id_error_codes) ~ ANY)* ~
+                         error_codes ~
+                     (!("<h5>" ~ id_api_keys) ~ ANY)* ~
+                         api_keys ~
+                     ((!("<h5>" ~ named_tag_a) ~ ANY)* ~
+                         req_resp)+ ~
+                     (!"</body>" ~ ANY)* ~
+                     "</body>" }
         script  = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
         h_end   = _{ "</html>" }
 
-target = _{ error_codes | api_keys | req_resp | ANY }
+target = _{ req_resp | ANY }
 
 error_codes = { "<h5>" ~ id_error_codes ~ "</h5>" ~ any_but_table ~ table }
     id_error_codes = _{ "<a id=\"protocol_error_codes\"" ~ end_tag_a }
@@ -19,11 +26,14 @@ error_codes = { "<h5>" ~ id_error_codes ~ "</h5>" ~ any_but_table ~ table }
 api_keys = { "<h5>" ~ id_api_keys ~ "</h5>" ~ any_but_table ~ table }
     id_api_keys = _{ "<a id=\"protocol_api_keys\"" ~ end_tag_a }
 
-req_resp = { "<h5>" ~ named_tag_a ~ "</h5>" ~ (!"<h5>" ~ any_but_pre ~ spec)+ }
+req_resp = { "<h5>" ~ named_tag_a ~ "</h5>" ~ spec_raw }
     named_tag_a = _{ "<a name=" ~ end_tag_a }
+    spec_raw    =  { (!("<h5>"|"<h4>") ~ ANY)* }
 
-any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY )* }
-any_but_pre   = _{ (!"<pre>" ~ ANY )* }
+spec = { ( any_but_pre ~ "<pre>" ~ content ~ "</pre>" ~ table )+ ~ ANY* }
+
+any_but_table = _{ (!"<table class=\"data-table\">" ~ ANY)* }
+any_but_pre   = _{ (!"<pre>" ~ ANY)* }
 end_tag_a     = _{ (!">" ~ ANY)* ~ ">" ~ (!"</a>" ~ ANY)* ~ "</a>" }
 
 table = { tstart ~ thead ~ tinner ~ tend }
@@ -35,8 +45,6 @@ table = { tstart ~ thead ~ tinner ~ tend }
         td =  { "<td>" ~ (a | content) ~ "</td>" }
          a =  { "<a" ~ (!">" ~ ("=" | ANY))* ~ ">" ~ content ~ "</a>" }
     tend   = _{ "</table>" }
-
-spec = _{ "<pre>" ~ content ~ "</pre>" ~ table }
 
 content = { (!"</" ~ char)* }
 

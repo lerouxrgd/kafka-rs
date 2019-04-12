@@ -62,6 +62,7 @@ impl Parser {
                             )
                         })
                         .collect::<Vec<_>>();
+                    println!("err_code_rows len={:?}", err_code_rows.len());
                 }
 
                 Rule::api_keys => {
@@ -86,6 +87,7 @@ impl Parser {
                             (String::from(row[0]), String::from(row[1]))
                         })
                         .collect::<Vec<_>>();
+                    println!("api_key_rows len={:?}", api_key_rows.len());
                 }
 
                 Rule::req_resp => {
@@ -95,7 +97,11 @@ impl Parser {
                         continue;
                     }
 
-                    for section in target.into_inner() {
+                    let parsed_spec = ProtocolParser::parse(Rule::spec, target.as_str())?
+                        .next() // there is exactly one { spec }
+                        .expect("Unreachable spec rule");
+
+                    for section in parsed_spec.into_inner() {
                         match section.as_rule() {
                             Rule::table => {
                                 let fields_doc = section
@@ -114,7 +120,7 @@ impl Parser {
 
                             Rule::content => {
                                 let (name, version, spec) = parse_struct_spec(section.as_str())?;
-                                println!("{}\n{:?}", name, spec);
+                                println!("{} V{:?}\n{:?}", name, version, spec);
                             }
 
                             _ => unreachable!(), // no other rules
