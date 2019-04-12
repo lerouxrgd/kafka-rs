@@ -18,8 +18,6 @@ file = { SOI ~ doctype ~ html ~ EOI }
         script  = _{ "<script" ~ (!">" ~ ANY)* ~ ">" ~ (!"</script>" ~ ANY)* ~ "</script>" }
         h_end   = _{ "</html>" }
 
-target = _{ req_resp | ANY }
-
 error_codes = { "<h5>" ~ id_error_codes ~ "</h5>" ~ any_but_table ~ table }
     id_error_codes = _{ "<a id=\"protocol_error_codes\"" ~ end_tag_a }
 
