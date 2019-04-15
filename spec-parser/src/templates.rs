@@ -1,7 +1,7 @@
 use failure::{Error, Fail, SyncFailure};
 use tera::{Context, Tera};
 
-use crate::common::{ApiKeyRows, ErrorCodeRows, Versions};
+use crate::common::{ApiKeyRows, ErrorCodeRows, VersionRows};
 
 pub const HEADERS: &str = r#"
 #[derive(Debug, serde::Serialize)]
@@ -152,7 +152,7 @@ impl Templater {
         Ok(self.tera.render(API_KEYS_TERA, &ctx).sync()?)
     }
 
-    pub fn str_req_resp_enum(&self, name: &str, versions: &Versions) -> Result<String, Error> {
+    pub fn str_req_resp_enum(&self, name: &str, versions: &VersionRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("name", name);
         ctx.insert("versions", versions);

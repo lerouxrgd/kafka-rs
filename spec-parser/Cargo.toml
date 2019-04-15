@@ -9,6 +9,7 @@ readme = "README.md"
 [dependencies]
 failure = "0.1"
 heck = "0.3"
+indexmap = "1.0"
 lazy_static = "1.2"
 pest = "2.0"
 pest_derive = "2.0"

@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use failure::{Error, Fail};
 use heck::CamelCase;
+use indexmap::IndexMap;
 use lazy_static::*;
 use pest::Parser as _;
 use pest_derive::*;
 use regex::Regex;
 
-use crate::common::{ApiKeyRows, ErrorCodeRows};
+use crate::common::{ApiKeyRows, ErrorCodeRows, VersionRows};
 
 /// Describes errors happened while parsing protocol specs.
 #[derive(Fail, Debug)]
@@ -39,7 +40,7 @@ impl Parser {
         let mut err_code_rows = vec![];
         let mut api_key_rows = vec![];
 
-        let mut skip_req_resp = 0;
+        let mut skip_req_resp = 41;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -101,8 +102,20 @@ impl Parser {
                         .next() // there is exactly one { spec }
                         .expect("Unreachable spec rule");
 
+                    let mut acc = IndexMap::new();
+                    let mut curr_name = None;
+                    let mut curr_version = None;
+                    let mut curr_spec = None;
+
                     for section in parsed_spec.into_inner() {
                         match section.as_rule() {
+                            Rule::content => {
+                                let (name, version, spec) = parse_struct_spec(section.as_str())?;
+                                curr_name = Some(name);
+                                curr_version = Some(version);
+                                curr_spec = Some(spec);
+                            }
+
                             Rule::table => {
                                 let fields_doc = section
                                     .into_inner() // inner { td }
@@ -115,17 +128,30 @@ impl Parser {
                                         (String::from(row[0]), String::from(row[1]))
                                     })
                                     .collect::<HashMap<_, _>>();
-                                println!("{:?}", fields_doc);
+
+                                let name = curr_name.take().expect("unreachable no name parsed");
+                                let data = (
+                                    curr_version.take().expect("unreachable no key parsed"),
+                                    curr_spec.take().expect("unreachable no spec parsed"),
+                                    fields_doc,
+                                );
+
+                                match acc.get_mut(&name) {
+                                    None => {
+                                        acc.insert(name, vec![data]);
+                                    }
+                                    Some(versions) => {
+                                        versions.push(data);
+                                    }
+                                };
                             }
 
-                            Rule::content => {
-                                let (name, version, spec) = parse_struct_spec(section.as_str())?;
-                                println!("{} V{:?}\n{:?}", name, version, spec);
-                            }
-
-                            _ => unreachable!(), // no other rules
+                            _ => unreachable!("No other rules"),
                         }
                     }
+
+                    println!("-------->");
+                    println!("{:?}", acc);
                 }
 
                 _ => (),
@@ -450,6 +476,10 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
     }
 
     Ok((name, version, Spec::Struct(specs)))
+}
+
+fn yoyo<'a>(spec: &Spec<'a>, docs: &HashMap<String, String>) -> (String, VersionRows) {
+    unimplemented!()
 }
 
 #[cfg(test)]
