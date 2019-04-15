@@ -130,18 +130,18 @@ impl Parser {
                                     .collect::<HashMap<_, _>>();
 
                                 let name = curr_name.take().expect("unreachable no name parsed");
-                                let data = (
-                                    curr_version.take().expect("unreachable no key parsed"),
+                                let version = (
+                                    curr_version.take().expect("unreachable no version parsed"),
                                     curr_spec.take().expect("unreachable no spec parsed"),
                                     fields_doc,
                                 );
 
                                 match acc.get_mut(&name) {
                                     None => {
-                                        acc.insert(name, vec![data]);
+                                        acc.insert(name, vec![version]);
                                     }
                                     Some(versions) => {
-                                        versions.push(data);
+                                        versions.push(version);
                                     }
                                 };
                             }
