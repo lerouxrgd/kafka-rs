@@ -84,7 +84,7 @@ pub mod api_versions_response {
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-enum CreateTopicsRequest {
+pub enum CreateTopicsRequest {
     V0 {
         create_topic_requests: Vec<create_topic_request::v0::CreateTopicsRequests>,
         timeout: i32,

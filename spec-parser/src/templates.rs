@@ -1,7 +1,7 @@
 use failure::{Error, Fail, SyncFailure};
 use tera::{Context, Tera};
 
-use crate::common::{ApiKeyRows, ErrorCodeRows};
+use crate::common::{ApiKeyRows, ErrorCodeRows, Versions};
 
 pub const HEADERS: &str = r#"
 #[derive(Debug, serde::Serialize)]
@@ -43,24 +43,33 @@ pub enum ApiKey {
 }
 "#;
 
-pub const STRUCT_TERA: &str = "struct.tera";
-pub const STRUCT_TEMPLATE: &str = r#"
+pub const REQ_RESP_ENUM_TERA: &str = "req_resp_enum.tera";
+pub const REQ_RESP_ENUM_TEMPLATE: &str = r#"
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-enum {{ name_enum }} {
-    {%- for version in versions %}
-    V{{ loop.index }} {
-        ???: ???,
+enum {{ name }} {
+    {%- for fields in versions %}
+    V{{ loop.index0 }} {
+        {%- for f in fields %}
+{{ f.2 }}
+        {{ f.0 }}: {{ f.1 }},
+        {%- endfor %}
     },
     {%- endfor %}
 }
+"#;
 
-pub mod {{ name_module }} {
-    {%- for version in versions %}
-    pub mod v{{ loop.index }} {
+pub const REQ_RESP_MOD_TERA: &str = "req_resp_mod.tera";
+pub const REQ_RESP_MOD_TEMPLATE: &str = r#"
+pub mod {{ name }} {
+    {%- for ver in versions %}
+    pub mod v{{ loop.index0 }} {
+        {%- for struct in ver %}
         #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct {{ ??? }} {
-{{ ??? }}
-            pub ???: ???,
+        pub struct {{ struct.0 }} {
+            {%- for f in struct.1 %}
+{{ f.2 }}
+            pub {{ f.0 }}: {{ f.1 }},
+            {%- endfor %}
         }
         {%- endfor %}
     }
@@ -118,7 +127,15 @@ impl Templater {
             .sync()?;
         tera.add_raw_template(API_KEYS_TERA, API_KEYS_TEMPLATE)
             .sync()?;
+        tera.add_raw_template(REQ_RESP_ENUM_TERA, REQ_RESP_ENUM_TEMPLATE)
+            .sync()?;
+        tera.add_raw_template(REQ_RESP_MOD_TERA, REQ_RESP_MOD_TEMPLATE)
+            .sync()?;
         Ok(Templater { tera })
+    }
+
+    pub fn str_headers(&self) -> &'static str {
+        HEADERS
     }
 
     /// Generates a Rust enum with all Kafka error codes.
@@ -133,5 +150,40 @@ impl Templater {
         let mut ctx = Context::new();
         ctx.insert("api_keys", api_keys);
         Ok(self.tera.render(API_KEYS_TERA, &ctx).sync()?)
+    }
+
+    pub fn str_req_resp_enum(&self, name: &str, versions: &Versions) -> Result<String, Error> {
+        let mut ctx = Context::new();
+        ctx.insert("name", name);
+        ctx.insert("versions", versions);
+        Ok(self.tera.render(REQ_RESP_ENUM_TERA, &ctx).sync()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn template_req_resp_enum() {
+        let templater = Templater::new().unwrap();
+
+        let name = "CreateTopicsRequest";
+
+        let versions = vec![vec![
+            (
+                "create_topic_requests".to_owned(),
+                "Vec<create_topic_request::v0::CreateTopicsRequests>".to_owned(),
+                "        /// I am a comment.".to_owned(),
+            ),
+            (
+                "timeout".to_owned(),
+                "i32".to_owned(),
+                "        /// I am another comment.".to_owned(),
+            ),
+        ]];
+
+        let res = templater.str_req_resp_enum(name, &versions).unwrap();
+        println!("{}", res);
     }
 }
