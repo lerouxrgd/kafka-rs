@@ -8,7 +8,7 @@ use pest::Parser as _;
 use pest_derive::*;
 use regex::Regex;
 
-use crate::common::{ApiKeyRows, ErrorCodeRows, VersionRows};
+use crate::templates::piece;
 
 /// Describes errors happened while parsing protocol specs.
 #[derive(Fail, Debug)]
@@ -25,12 +25,16 @@ impl ParserError {
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
 
-pub struct Parser {
-    err_code_rows: ErrorCodeRows,
-    api_key_rows: ApiKeyRows,
+/// Vector of (version, spec, fields_doc)
+type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<String, String>)>;
+
+pub struct Parser<'a> {
+    err_code_rows: piece::ErrorCodeRows,
+    api_key_rows: piece::ApiKeyRows,
+    struct_specs: IndexMap<String, VersionedSpecs<'a>>,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     fn new() -> Result<Self, Error> {
         let raw = include_str!("protocol.html");
         let parsed_file = ProtocolParser::parse(Rule::file, &raw)?
@@ -39,8 +43,9 @@ impl Parser {
 
         let mut err_code_rows = vec![];
         let mut api_key_rows = vec![];
+        let mut struct_specs = IndexMap::new();
 
-        let mut skip_req_resp = 41;
+        let mut skip_req_resp = 42;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -63,7 +68,6 @@ impl Parser {
                             )
                         })
                         .collect::<Vec<_>>();
-                    println!("err_code_rows len={:?}", err_code_rows.len());
                 }
 
                 Rule::api_keys => {
@@ -88,7 +92,6 @@ impl Parser {
                             (String::from(row[0]), String::from(row[1]))
                         })
                         .collect::<Vec<_>>();
-                    println!("api_key_rows len={:?}", api_key_rows.len());
                 }
 
                 Rule::req_resp => {
@@ -102,7 +105,6 @@ impl Parser {
                         .next() // there is exactly one { spec }
                         .expect("Unreachable spec rule");
 
-                    let mut acc = IndexMap::new();
                     let mut curr_name = None;
                     let mut curr_version = None;
                     let mut curr_spec = None;
@@ -136,9 +138,9 @@ impl Parser {
                                     fields_doc,
                                 );
 
-                                match acc.get_mut(&name) {
+                                match struct_specs.get_mut(&name) {
                                     None => {
-                                        acc.insert(name, vec![version]);
+                                        struct_specs.insert(name, vec![version]);
                                     }
                                     Some(versions) => {
                                         versions.push(version);
@@ -149,9 +151,6 @@ impl Parser {
                             _ => unreachable!("No other rules"),
                         }
                     }
-
-                    println!("-------->");
-                    println!("{:?}", acc);
                 }
 
                 _ => (),
@@ -161,7 +160,34 @@ impl Parser {
         Ok(Parser {
             err_code_rows,
             api_key_rows,
+            struct_specs,
         })
+    }
+
+    fn enum_version_rows(&self) -> (String, piece::VersionRows) {
+        let (enum_name, versioned_specs) = self.struct_specs.get_index(0).unwrap();
+        let version_rows: piece::VersionRows = versioned_specs
+            .iter()
+            .map(|(_, spec, docs)| {
+                let fields: piece::Fields = if let Spec::Struct(fields) = spec {
+                    fields
+                        .iter()
+                        .map(|(name, _)| {
+                            (
+                                (*name).to_string(),
+                                (*name).to_string(),
+                                docs.get(*name)
+                                    .map_or_else(|| "".to_string(), |d| d.clone()),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    unreachable!("All specs are Spec::Struct(_)");
+                };
+                fields
+            })
+            .collect::<Vec<_>>();
+        (enum_name.clone(), version_rows)
     }
 }
 
@@ -478,10 +504,6 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
     Ok((name, version, Spec::Struct(specs)))
 }
 
-fn yoyo<'a>(spec: &Spec<'a>, docs: &HashMap<String, String>) -> (String, VersionRows) {
-    unimplemented!()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,7 +529,12 @@ mod tests {
     #[test]
     #[ignore]
     fn req_resp() {
-        let _parser = Parser::new().unwrap();
+        let parser = Parser::new().unwrap();
+        println!("{:?}", parser.struct_specs.get_index(0));
+        println!(
+            "{:?}",
+            parser.struct_specs.get_index(parser.struct_specs.len() - 1)
+        );
     }
 
     #[test]
