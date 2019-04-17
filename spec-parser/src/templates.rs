@@ -1,9 +1,11 @@
 use failure::{Error, Fail, SyncFailure};
 use tera::{Context, Tera};
 
-pub mod piece {
+pub mod shape {
+    /// Vector of (name, code_id, doc)
     pub type ErrorCodeRows = Vec<(String, String, String)>;
 
+    /// Vector of (name, key_id)
     pub type ApiKeyRows = Vec<(String, String)>;
 
     /// Vector of (name, rust_type, doc)
@@ -148,14 +150,14 @@ impl Templater {
     }
 
     /// Generates a Rust enum with all Kafka error codes.
-    pub fn str_err_codes(&self, err_codes: &piece::ErrorCodeRows) -> Result<String, Error> {
+    pub fn str_err_codes(&self, err_codes: &shape::ErrorCodeRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("err_codes", err_codes);
         Ok(self.tera.render(ERROR_CODES_TERA, &ctx).sync()?)
     }
 
     /// Generates a Rust enum with all Kafka api keys.
-    pub fn str_api_keys(&self, api_keys: &piece::ApiKeyRows) -> Result<String, Error> {
+    pub fn str_api_keys(&self, api_keys: &shape::ApiKeyRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("api_keys", api_keys);
         Ok(self.tera.render(API_KEYS_TERA, &ctx).sync()?)
@@ -164,7 +166,7 @@ impl Templater {
     pub fn str_req_resp_enum(
         &self,
         name: &str,
-        versions: &piece::VersionRows,
+        versions: &shape::VersionRows,
     ) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("name", name);

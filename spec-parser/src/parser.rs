@@ -8,7 +8,7 @@ use pest::Parser as _;
 use pest_derive::*;
 use regex::Regex;
 
-use crate::templates::piece;
+use crate::templates::shape;
 
 /// Describes errors happened while parsing protocol specs.
 #[derive(Fail, Debug)]
@@ -29,8 +29,8 @@ pub struct ProtocolParser;
 type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<String, String>)>;
 
 pub struct Parser<'a> {
-    err_code_rows: piece::ErrorCodeRows,
-    api_key_rows: piece::ApiKeyRows,
+    err_code_rows: shape::ErrorCodeRows,
+    api_key_rows: shape::ApiKeyRows,
     struct_specs: IndexMap<String, VersionedSpecs<'a>>,
 }
 
@@ -164,12 +164,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn enum_version_rows(&self) -> (String, piece::VersionRows) {
+    fn enum_version_rows(&self) -> (String, shape::VersionRows) {
         let (enum_name, versioned_specs) = self.struct_specs.get_index(0).unwrap();
-        let version_rows: piece::VersionRows = versioned_specs
+        let version_rows: shape::VersionRows = versioned_specs
             .iter()
             .map(|(_, spec, docs)| {
-                let fields: piece::Fields = if let Spec::Struct(fields) = spec {
+                let fields: shape::Fields = if let Spec::Struct(fields) = spec {
                     fields
                         .iter()
                         .map(|(name, _)| {
