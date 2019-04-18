@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use failure::{Error, Fail};
-use heck::CamelCase;
+use heck::{CamelCase, SnakeCase};
 use indexmap::IndexMap;
 use lazy_static::*;
 use pest::Parser as _;
@@ -45,7 +45,7 @@ impl<'a> Parser<'a> {
         let mut api_key_rows = vec![];
         let mut struct_specs = IndexMap::new();
 
-        let mut skip_req_resp = 42;
+        let mut skip_req_resp = 19;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -164,31 +164,54 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn enum_version_rows(&self) -> (String, shape::VersionRows) {
-        let (enum_name, versioned_specs) = self.struct_specs.get_index(0).unwrap();
-        let version_rows: shape::VersionRows = versioned_specs
-            .iter()
-            .map(|(_, spec, docs)| {
-                let fields: shape::Fields = if let Spec::Struct(fields) = spec {
-                    fields
-                        .iter()
-                        .map(|(name, _)| {
-                            (
-                                (*name).to_string(),
-                                (*name).to_string(),
-                                docs.get(*name)
-                                    .map_or_else(|| "".to_string(), |d| d.clone()),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    unreachable!("All specs are Spec::Struct(_)");
-                };
-                fields
-            })
-            .collect::<Vec<_>>();
-        (enum_name.clone(), version_rows)
+    fn iter_req_resp(&self) -> (&String, &VersionedSpecs) {
+        self.struct_specs.get_index(0).unwrap()
     }
+}
+
+fn enum_version_rows(enum_name: &str, versioned_specs: &VersionedSpecs) -> shape::VersionRows {
+    fn rust_type_for(
+        field_name: &str,
+        field_spec: &Spec,
+        enum_name: &str,
+        version: &i16,
+    ) -> String {
+        match field_spec {
+            Spec::Value(primitive) => primitive.rust_type(),
+            Spec::Array(inner) => format!(
+                "Vec<{}>",
+                rust_type_for(field_name, &*inner, enum_name, version)
+            ),
+            Spec::Struct(_) => format!(
+                "{}::v{}::{}",
+                enum_name.to_snake_case(),
+                version,
+                field_name.to_camel_case()
+            ),
+        }
+    }
+
+    versioned_specs
+        .iter()
+        .map(|(version, spec, docs)| {
+            let fields: shape::Fields = if let Spec::Struct(fields) = spec {
+                fields
+                    .iter()
+                    .map(|(field_name, field_spec)| {
+                        (
+                            field_name.to_string(),
+                            rust_type_for(field_name, field_spec, enum_name, version),
+                            docs.get(*field_name)
+                                .map_or_else(|| String::default(), |doc| capped_comment(doc, 8)),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                unreachable!("All specs are Spec::Struct(_)");
+            };
+            fields
+        })
+        .collect::<Vec<_>>()
 }
 
 fn capped_comment(text: &str, nb_indent: usize) -> String {
@@ -300,6 +323,24 @@ impl Primitive {
             };
         }
         VALIDS.contains(raw)
+    }
+
+    fn rust_type(&self) -> String {
+        match *self {
+            Primitive::Boolean => "bool".to_string(),
+            Primitive::Int8 => "i8".to_string(),
+            Primitive::Int16 => "i16".to_string(),
+            Primitive::Int32 => "i32".to_string(),
+            Primitive::Int64 => "i64".to_string(),
+            Primitive::Uint32 => "u32".to_string(),
+            Primitive::Varint => "crate::types::Varint".to_string(),
+            Primitive::Varlong => "crate::types::Varlong".to_string(),
+            Primitive::String => "String".to_string(),
+            Primitive::NullableString => "crate::types::NullableString".to_string(),
+            Primitive::Bytes => "crate::types::Bytes".to_string(),
+            Primitive::NullableBytes => "crate::types::NullableBytes".to_string(),
+            Primitive::Records => "crate::types::Records".to_string(),
+        }
     }
 }
 
@@ -510,7 +551,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn error_codes() {
+    fn parse_error_codes() {
         let parser = Parser::new().unwrap();
         for row in parser.err_code_rows {
             println!("{:?}", row);
@@ -519,7 +560,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn api_keys() {
+    fn parse_api_keys() {
         let parser = Parser::new().unwrap();
         for row in parser.api_key_rows {
             println!("{:?}", row);
@@ -528,7 +569,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn req_resp() {
+    fn parse_req_resp() {
         let parser = Parser::new().unwrap();
         println!("{:?}", parser.struct_specs.get_index(0));
         println!(
@@ -538,7 +579,17 @@ mod tests {
     }
 
     #[test]
-    fn spec() {
+    fn parse_enum_version_rows() {
+        let parser = Parser::new().unwrap();
+        let (enum_name, versioned_specs) = parser.iter_req_resp();
+        let rows = enum_version_rows(enum_name, versioned_specs);
+        println!("{:?}", enum_name);
+        println!("{:?}", versioned_specs.get(0).unwrap());
+        println!("{:?}", rows.get(0).unwrap());
+    }
+
+    #[test]
+    fn parse_spec() {
         use super::Spec::*;
 
         let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout 
