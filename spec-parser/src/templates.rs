@@ -11,7 +11,7 @@ pub mod shape {
     /// Vector of (name, rust_type, doc)
     pub type Fields = Vec<(String, String, String)>;
 
-    pub type VersionRows = Vec<Fields>;
+    pub type EnumVfields = Vec<Fields>;
 }
 
 pub const HEADERS: &str = r#"
@@ -166,7 +166,7 @@ impl Templater {
     pub fn str_req_resp_enum(
         &self,
         name: &str,
-        versions: &shape::VersionRows,
+        versions: &shape::EnumVfields,
     ) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("name", name);

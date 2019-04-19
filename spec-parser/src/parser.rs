@@ -169,7 +169,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn enum_version_rows(enum_name: &str, versioned_specs: &VersionedSpecs) -> shape::VersionRows {
+fn enum_vfields(enum_name: &str, versioned_specs: &VersionedSpecs) -> shape::EnumVfields {
     fn rust_type_for(
         field_name: &str,
         field_spec: &Spec,
@@ -352,11 +352,6 @@ enum Spec<'a> {
 }
 
 fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error> {
-    lazy_static! {
-        static ref RE: Regex =
-            Regex::new(r"(\w+) (\w+) (\(Version: (\d+)\) )?=>(.*)").expect("Invalid regex");
-    }
-
     #[derive(Debug, Clone)]
     enum Field<'a> {
         Simple(&'a str),
@@ -482,25 +477,28 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
         Ok(specs)
     }
 
+    lazy_static! {
+        static ref HEADER: Regex =
+            Regex::new(r"(\w+) (\w+) \(Version: (\d+)\) =>(.*)").expect("Invalid regex");
+    }
+
     let raw_lines = raw.split('\n').collect::<Vec<_>>();
-    let (first, rest) = raw_lines
-        .split_first()
-        .ok_or_else(|| ParserError::new(format!("Not enough raw lines: {:?}", raw_lines)))?;
+    let (first, rest) = raw_lines.split_first().expect("Unreachable split fail");
 
-    let caps = RE
-        .captures(first)
-        .ok_or_else(|| ParserError::new(format!("First line didn't match: {:?} {}", *RE, first)))?;
+    let header = HEADER.captures(first).ok_or_else(|| {
+        ParserError::new(format!("First line didn't match: {:?} {}", *HEADER, first))
+    })?;
 
-    let (name, version) = match (caps.get(1), caps.get(2), caps.get(4)) {
+    let (name, version) = match (header.get(1), header.get(2), header.get(3)) {
         (Some(name), Some(genre), Some(version)) => {
             let version: i16 = version.as_str().parse()?;
             let name = format!("{}{}", name.as_str(), genre.as_str());
             (name, version)
         }
-        _ => return Err(ParserError::new(format!("Invalid name match: {:?}", caps)).into()),
+        _ => return Err(ParserError::new(format!("Invalid name match: {:?}", header)).into()),
     };
 
-    let root = Kind::for_root(caps.get(5).map_or("", |m| m.as_str().trim()));
+    let root = Kind::for_root(header.get(4).map_or("", |m| m.as_str().trim()));
 
     let mut lines = rest
         .to_vec()
@@ -579,10 +577,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_enum_version_rows() {
+    fn parse_enum_vfields() {
         let parser = Parser::new().unwrap();
         let (enum_name, versioned_specs) = parser.iter_req_resp();
-        let rows = enum_version_rows(enum_name, versioned_specs);
+        let rows = enum_vfields(enum_name, versioned_specs);
         println!("{:?}", enum_name);
         println!("{:?}", versioned_specs.get(0).unwrap());
         println!("{:?}", rows.get(0).unwrap());
