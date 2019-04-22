@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use failure::{Error, Fail};
 use heck::{CamelCase, SnakeCase};
@@ -223,15 +223,50 @@ fn mod_vstructs(versioned_specs: &VersionedSpecs) -> shape::ModVstructs {
         }
     }
 
-    fn spec_deps<'a>(spec: &Spec) -> Vec<(String, &'a Spec<'a>)> {
-        // TODO: implement that
-        unimplemented!()
+    fn spec_deps<'a>(spec: &'a Spec<'_>) -> Vec<(String, &'a Spec<'a>)> {
+        let mut deps = Vec::new();
+        let mut q = VecDeque::new();
+
+        if let Spec::Struct(fields) = spec {
+            for (f_name, f_spec) in fields {
+                match f_spec {
+                    Spec::Value(_) => (),
+                    Spec::Array(inner) => q.push_back((f_name.to_camel_case(), &**inner)),
+                    Spec::Struct(_) => {
+                        q.push_back((f_name.to_camel_case(), f_spec));
+                        deps.push((f_name.to_camel_case(), f_spec));
+                    }
+                }
+            }
+        } else {
+            unreachable!("All specs are Spec::Struct(_)");
+        }
+
+        while let Some((ref f_name, ref f_spec)) = q.pop_front() {
+            match (f_name, f_spec) {
+                (_, Spec::Value(_)) => (),
+                (_, Spec::Array(inner)) => q.push_back((f_name.to_camel_case(), &**inner)),
+                (_, Spec::Struct(fields)) => {
+                    for (f_name, f_spec) in fields {
+                        match f_spec {
+                            Spec::Value(_) => (),
+                            Spec::Array(inner) => q.push_back((f_name.to_camel_case(), &**inner)),
+                            Spec::Struct(_) => q.push_back((f_name.to_camel_case(), f_spec)),
+                        }
+                    }
+                    deps.push((f_name.to_camel_case(), f_spec));
+                }
+            }
+        }
+
+        deps
     }
 
     versioned_specs
         .iter()
         .map(|(_, spec, docs)| {
             let structs: Vec<(String, &Spec)> = spec_deps(spec);
+            println!("----> {:?}", structs);
             structs
                 .iter()
                 .map(|(struct_name, struct_spec)| {
@@ -625,10 +660,20 @@ mod tests {
     fn parse_enum_vfields() {
         let parser = Parser::new().unwrap();
         let (enum_name, versioned_specs) = parser.iter_req_resp();
-        let rows = enum_vfields(enum_name, versioned_specs);
+        let vfields = enum_vfields(enum_name, versioned_specs);
         println!("{:?}", enum_name);
         println!("{:?}", versioned_specs.get(0).unwrap());
-        println!("{:?}", rows.get(0).unwrap());
+        println!("{:?}", vfields.get(0).unwrap());
+    }
+
+    #[test]
+    fn parse_mod_vstructs() {
+        let parser = Parser::new().unwrap();
+        let (mod_name, versioned_specs) = parser.iter_req_resp();
+        let vstructs = mod_vstructs(versioned_specs);
+        println!("{:?}", mod_name.to_snake_case());
+        println!("{:?}", versioned_specs.get(0).unwrap());
+        println!("{:?}", vstructs.get(0).unwrap());
     }
 
     #[test]
