@@ -214,6 +214,51 @@ fn enum_vfields(enum_name: &str, versioned_specs: &VersionedSpecs) -> shape::Enu
         .collect::<Vec<_>>()
 }
 
+fn mod_vstructs(versioned_specs: &VersionedSpecs) -> shape::ModVstructs {
+    fn rust_type_for(field_name: &str, field_spec: &Spec) -> String {
+        match field_spec {
+            Spec::Value(primitive) => primitive.rust_type(),
+            Spec::Array(inner) => format!("Vec<{}>", rust_type_for(field_name, &*inner)),
+            Spec::Struct(_) => field_name.to_camel_case(),
+        }
+    }
+
+    fn spec_deps<'a>(spec: &Spec) -> Vec<(String, &'a Spec<'a>)> {
+        // TODO: implement that
+        unimplemented!()
+    }
+
+    versioned_specs
+        .iter()
+        .map(|(_, spec, docs)| {
+            let structs: Vec<(String, &Spec)> = spec_deps(spec);
+            structs
+                .iter()
+                .map(|(struct_name, struct_spec)| {
+                    let struct_fields: shape::Fields = if let Spec::Struct(fields) = struct_spec {
+                        fields
+                            .iter()
+                            .map(|(field_name, field_spec)| {
+                                (
+                                    field_name.to_string(),
+                                    rust_type_for(field_name, field_spec),
+                                    docs.get(*field_name).map_or_else(
+                                        || String::default(),
+                                        |doc| capped_comment(doc, 12),
+                                    ),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        unreachable!("All specs are Spec::Struct(_)");
+                    };
+                    (struct_name.clone(), struct_fields)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+}
+
 fn capped_comment(text: &str, nb_indent: usize) -> String {
     lazy_static! {
         static ref RE: Regex = Regex::new(r"\b.{1,55}\b\W?").expect("Invalid regex");

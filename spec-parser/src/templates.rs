@@ -11,7 +11,12 @@ pub mod shape {
     /// Vector of (name, rust_type, doc)
     pub type Fields = Vec<(String, String, String)>;
 
+    /// A req/resp enum's versioned fields. Each element is a version.
     pub type EnumVfields = Vec<Fields>;
+
+    /// A req/resp module's versioned structs. Each element is a version.
+    /// Each version is a vector of (struct_name, struct_fields)
+    pub type ModVstructs = Vec<Vec<(String, Fields)>>;
 }
 
 pub const HEADERS: &str = r#"
@@ -165,13 +170,24 @@ impl Templater {
 
     pub fn str_req_resp_enum(
         &self,
-        name: &str,
+        enum_name: &str,
         versions: &shape::EnumVfields,
     ) -> Result<String, Error> {
         let mut ctx = Context::new();
-        ctx.insert("name", name);
+        ctx.insert("name", enum_name);
         ctx.insert("versions", versions);
         Ok(self.tera.render(REQ_RESP_ENUM_TERA, &ctx).sync()?)
+    }
+
+    pub fn str_req_resp_mod(
+        &self,
+        module_name: &str,
+        versions: &shape::ModVstructs,
+    ) -> Result<String, Error> {
+        let mut ctx = Context::new();
+        ctx.insert("name", module_name);
+        ctx.insert("versions", versions);
+        Ok(self.tera.render(REQ_RESP_MOD_TERA, &ctx).sync()?)
     }
 }
 
@@ -183,7 +199,7 @@ mod tests {
     fn template_req_resp_enum() {
         let templater = Templater::new().unwrap();
 
-        let name = "CreateTopicsRequest";
+        let enum_name = "CreateTopicsRequest";
 
         let versions = vec![vec![
             (
@@ -198,7 +214,43 @@ mod tests {
             ),
         ]];
 
-        let res = templater.str_req_resp_enum(name, &versions).unwrap();
+        let res = templater.str_req_resp_enum(enum_name, &versions).unwrap();
+        println!("{}", res);
+    }
+
+    #[test]
+    fn template_req_resp_mod() {
+        let templater = Templater::new().unwrap();
+
+        let mod_name = "create_topics_request";
+
+        let versions = vec![vec![
+            (
+                "CreateTopicsRequests".to_owned(),
+                vec![
+                    (
+                        "topic".to_owned(),
+                        "String".to_owned(),
+                        "            /// I am a comment.".to_owned(),
+                    ),
+                    (
+                        "num_partitions".to_owned(),
+                        "i32".to_owned(),
+                        "            /// I am another comment.".to_owned(),
+                    ),
+                ],
+            ),
+            (
+                "ReplicaAssignment".to_owned(),
+                vec![(
+                    "partition".to_owned(),
+                    "i32".to_owned(),
+                    "            /// I am a comment.".to_owned(),
+                )],
+            ),
+        ]];
+
+        let res = templater.str_req_resp_mod(mod_name, &versions).unwrap();
         println!("{}", res);
     }
 }
