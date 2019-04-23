@@ -164,134 +164,163 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn iter_req_resp(&self) -> (&String, &VersionedSpecs) {
-        self.struct_specs.get_index(0).unwrap()
+    fn iter_req_resp(&self) -> IterReqResp {
+        IterReqResp {
+            index: 0,
+            specs: &self.struct_specs,
+        }
     }
 }
 
-fn enum_vfields(enum_name: &str, versioned_specs: &VersionedSpecs) -> shape::EnumVfields {
-    fn rust_type_for(
-        field_name: &str,
-        field_spec: &Spec,
-        enum_name: &str,
-        version: &i16,
-    ) -> String {
-        match field_spec {
-            Spec::Value(primitive) => primitive.rust_type(),
-            Spec::Array(inner) => format!(
-                "Vec<{}>",
-                rust_type_for(field_name, &*inner, enum_name, version)
-            ),
-            Spec::Struct(_) => format!(
-                "{}::v{}::{}",
-                enum_name.to_snake_case(),
-                version,
-                field_name.to_camel_case()
-            ),
+pub struct IterReqResp<'a> {
+    index: usize,
+    specs: &'a IndexMap<String, VersionedSpecs<'a>>,
+}
+
+impl<'a> Iterator for IterReqResp<'a> {
+    type Item = (&'a String, &'a VersionedSpecs<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let data = self.specs.get_index(self.index);
+        self.index += 1;
+        data
+    }
+}
+
+trait TemplateInput {
+    fn enum_vfields(&self) -> shape::EnumVfields;
+    fn mod_vstructs(&self) -> shape::ModVstructs;
+}
+
+impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
+    fn enum_vfields(&self) -> shape::EnumVfields {
+        fn rust_type_for(
+            field_name: &str,
+            field_spec: &Spec,
+            enum_name: &str,
+            version: &i16,
+        ) -> String {
+            match field_spec {
+                Spec::Value(primitive) => primitive.rust_type(),
+                Spec::Array(inner) => format!(
+                    "Vec<{}>",
+                    rust_type_for(field_name, &*inner, enum_name, version)
+                ),
+                Spec::Struct(_) => format!(
+                    "{}::v{}::{}",
+                    enum_name.to_snake_case(),
+                    version,
+                    field_name.to_camel_case()
+                ),
+            }
         }
+
+        self.1
+            .iter()
+            .map(|(version, spec, docs)| {
+                let fields: shape::Fields = if let Spec::Struct(fields) = spec {
+                    fields
+                        .iter()
+                        .map(|(field_name, field_spec)| {
+                            (
+                                field_name.to_string(),
+                                rust_type_for(field_name, field_spec, self.0, version),
+                                docs.get(*field_name).map_or_else(
+                                    || String::default(),
+                                    |doc| capped_comment(doc, 8),
+                                ),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    unreachable!("All specs are Spec::Struct(_)");
+                };
+                fields
+            })
+            .collect::<Vec<_>>()
     }
 
-    versioned_specs
-        .iter()
-        .map(|(version, spec, docs)| {
-            let fields: shape::Fields = if let Spec::Struct(fields) = spec {
-                fields
-                    .iter()
-                    .map(|(field_name, field_spec)| {
-                        (
-                            field_name.to_string(),
-                            rust_type_for(field_name, field_spec, enum_name, version),
-                            docs.get(*field_name)
-                                .map_or_else(|| String::default(), |doc| capped_comment(doc, 8)),
-                        )
-                    })
-                    .collect::<Vec<_>>()
+    fn mod_vstructs(&self) -> shape::ModVstructs {
+        fn rust_type_for(field_name: &str, field_spec: &Spec) -> String {
+            match field_spec {
+                Spec::Value(primitive) => primitive.rust_type(),
+                Spec::Array(inner) => format!("Vec<{}>", rust_type_for(field_name, &*inner)),
+                Spec::Struct(_) => field_name.to_camel_case(),
+            }
+        }
+
+        fn spec_deps<'a>(spec: &'a Spec<'_>) -> Vec<(String, &'a Spec<'a>)> {
+            let mut deps = Vec::new();
+            let mut q = VecDeque::new();
+
+            if let Spec::Struct(fields) = spec {
+                for (f_name, f_spec) in fields {
+                    match f_spec {
+                        Spec::Value(_) => (),
+                        Spec::Array(inner) => q.push_back((f_name.to_camel_case(), &**inner)),
+                        Spec::Struct(_) => {
+                            q.push_back((f_name.to_camel_case(), f_spec));
+                            deps.push((f_name.to_camel_case(), f_spec));
+                        }
+                    }
+                }
             } else {
                 unreachable!("All specs are Spec::Struct(_)");
-            };
-            fields
-        })
-        .collect::<Vec<_>>()
-}
+            }
 
-fn mod_vstructs(versioned_specs: &VersionedSpecs) -> shape::ModVstructs {
-    fn rust_type_for(field_name: &str, field_spec: &Spec) -> String {
-        match field_spec {
-            Spec::Value(primitive) => primitive.rust_type(),
-            Spec::Array(inner) => format!("Vec<{}>", rust_type_for(field_name, &*inner)),
-            Spec::Struct(_) => field_name.to_camel_case(),
-        }
-    }
-
-    fn spec_deps<'a>(spec: &'a Spec<'_>) -> Vec<(String, &'a Spec<'a>)> {
-        let mut deps = Vec::new();
-        let mut q = VecDeque::new();
-
-        if let Spec::Struct(fields) = spec {
-            for (f_name, f_spec) in fields {
-                match f_spec {
-                    Spec::Value(_) => (),
-                    Spec::Array(inner) => q.push_back((f_name.to_camel_case(), &**inner)),
-                    Spec::Struct(_) => {
-                        q.push_back((f_name.to_camel_case(), f_spec));
+            while let Some((ref f_name, ref f_spec)) = q.pop_front() {
+                match (f_name, f_spec) {
+                    (_, Spec::Value(_)) => (),
+                    (_, Spec::Array(inner)) => q.push_back((f_name.to_camel_case(), &**inner)),
+                    (_, Spec::Struct(fields)) => {
+                        for (f_name, f_spec) in fields {
+                            match f_spec {
+                                Spec::Value(_) => (),
+                                Spec::Array(inner) => {
+                                    q.push_back((f_name.to_camel_case(), &**inner))
+                                }
+                                Spec::Struct(_) => q.push_back((f_name.to_camel_case(), f_spec)),
+                            }
+                        }
                         deps.push((f_name.to_camel_case(), f_spec));
                     }
                 }
             }
-        } else {
-            unreachable!("All specs are Spec::Struct(_)");
+
+            deps
         }
 
-        while let Some((ref f_name, ref f_spec)) = q.pop_front() {
-            match (f_name, f_spec) {
-                (_, Spec::Value(_)) => (),
-                (_, Spec::Array(inner)) => q.push_back((f_name.to_camel_case(), &**inner)),
-                (_, Spec::Struct(fields)) => {
-                    for (f_name, f_spec) in fields {
-                        match f_spec {
-                            Spec::Value(_) => (),
-                            Spec::Array(inner) => q.push_back((f_name.to_camel_case(), &**inner)),
-                            Spec::Struct(_) => q.push_back((f_name.to_camel_case(), f_spec)),
-                        }
-                    }
-                    deps.push((f_name.to_camel_case(), f_spec));
-                }
-            }
-        }
-
-        deps
+        self.1
+            .iter()
+            .map(|(_, spec, docs)| {
+                let structs: Vec<(String, &Spec)> = spec_deps(spec);
+                structs
+                    .iter()
+                    .map(|(struct_name, struct_spec)| {
+                        let struct_fields: shape::Fields = if let Spec::Struct(fields) = struct_spec
+                        {
+                            fields
+                                .iter()
+                                .map(|(field_name, field_spec)| {
+                                    (
+                                        field_name.to_string(),
+                                        rust_type_for(field_name, field_spec),
+                                        docs.get(*field_name).map_or_else(
+                                            || String::default(),
+                                            |doc| capped_comment(doc, 12),
+                                        ),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            unreachable!("All specs are Spec::Struct(_)");
+                        };
+                        (struct_name.clone(), struct_fields)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     }
-
-    versioned_specs
-        .iter()
-        .map(|(_, spec, docs)| {
-            let structs: Vec<(String, &Spec)> = spec_deps(spec);
-            println!("----> {:?}", structs);
-            structs
-                .iter()
-                .map(|(struct_name, struct_spec)| {
-                    let struct_fields: shape::Fields = if let Spec::Struct(fields) = struct_spec {
-                        fields
-                            .iter()
-                            .map(|(field_name, field_spec)| {
-                                (
-                                    field_name.to_string(),
-                                    rust_type_for(field_name, field_spec),
-                                    docs.get(*field_name).map_or_else(
-                                        || String::default(),
-                                        |doc| capped_comment(doc, 12),
-                                    ),
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                    } else {
-                        unreachable!("All specs are Spec::Struct(_)");
-                    };
-                    (struct_name.clone(), struct_fields)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
 }
 
 fn capped_comment(text: &str, nb_indent: usize) -> String {
@@ -313,7 +342,7 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Primitive {
+pub enum Primitive {
     /// Represents a boolean value in a byte. Values 0 and 1 are used to
     /// represent false and true respectively. When reading a boolean value,
     /// any non-zero value is considered true.
@@ -425,7 +454,7 @@ impl Primitive {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Spec<'a> {
+pub enum Spec<'a> {
     Value(Primitive),
     Array(Box<Spec<'a>>),
     Struct(Vec<(&'a str, Spec<'a>)>),
@@ -659,20 +688,20 @@ mod tests {
     #[test]
     fn parse_enum_vfields() {
         let parser = Parser::new().unwrap();
-        let (enum_name, versioned_specs) = parser.iter_req_resp();
-        let vfields = enum_vfields(enum_name, versioned_specs);
-        println!("{:?}", enum_name);
-        println!("{:?}", versioned_specs.get(0).unwrap());
+        let req_resp = parser.iter_req_resp().next().unwrap();
+        let vfields = req_resp.enum_vfields();
+        println!("{:?}", req_resp.0);
+        println!("{:?}", req_resp.1.get(0).unwrap());
         println!("{:?}", vfields.get(0).unwrap());
     }
 
     #[test]
     fn parse_mod_vstructs() {
         let parser = Parser::new().unwrap();
-        let (mod_name, versioned_specs) = parser.iter_req_resp();
-        let vstructs = mod_vstructs(versioned_specs);
-        println!("{:?}", mod_name.to_snake_case());
-        println!("{:?}", versioned_specs.get(0).unwrap());
+        let req_resp = parser.iter_req_resp().next().unwrap();
+        let vstructs = req_resp.mod_vstructs();
+        println!("{:?}", req_resp.0.to_snake_case());
+        println!("{:?}", req_resp.1.get(0).unwrap());
         println!("{:?}", vstructs.get(0).unwrap());
     }
 
