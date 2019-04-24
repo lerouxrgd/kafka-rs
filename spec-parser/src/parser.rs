@@ -25,13 +25,20 @@ impl ParserError {
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
 
-/// Vector of (version, spec, fields_doc)
-type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<String, String>)>;
-
 pub struct Parser<'a> {
     err_code_rows: shape::ErrorCodeRows,
     api_key_rows: shape::ApiKeyRows,
     struct_specs: IndexMap<String, VersionedSpecs<'a>>,
+}
+
+/// Vector of (version, spec, fields_doc)
+type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<String, String>)>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Spec<'a> {
+    Value(Primitive),
+    Array(Box<Spec<'a>>),
+    Struct(Vec<(&'a str, Spec<'a>)>),
 }
 
 impl<'a> Parser<'a> {
@@ -341,125 +348,6 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
         .join("\n")
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Primitive {
-    /// Represents a boolean value in a byte. Values 0 and 1 are used to
-    /// represent false and true respectively. When reading a boolean value,
-    /// any non-zero value is considered true.
-    Boolean,
-    /// Represents an integer between -2^7 and 2^7-1 inclusive.
-    Int8,
-    /// Represents an integer between -2^15 and 2^15-1 inclusive.
-    /// The values are encoded using two bytes in network byte order (big-endian).
-    Int16,
-    /// Represents an integer between -2^31 and 2^31-1 inclusive.
-    /// The values are encoded using four bytes in network byte order (big-endian).
-    Int32,
-    /// Represents an integer between -2^63 and 2^63-1 inclusive.
-    /// The values are encoded using eight bytes in network byte order (big-endian).
-    Int64,
-    /// Represents an integer between 0 and 2^32-1 inclusive.
-    /// The values are encoded using four bytes in network byte order (big-endian).
-    Uint32,
-    /// Represents an integer between -2^31 and 2^31-1 inclusive.
-    /// Encoding follows the variable-length zig-zag encoding from Google Protocol Buffers.
-    Varint,
-    /// Represents an integer between -2^63 and 2^63-1 inclusive.
-    /// Encoding follows the variable-length zig-zag encoding from Google Protocol Buffers.
-    Varlong,
-    /// Represents a sequence of characters. First the length N is given as an INT16.
-    /// Then N bytes follow which are the UTF-8 encoding of the character sequence.
-    /// Length must not be negative.
-    String,
-    /// Represents a sequence of characters or null. For non-null strings,
-    /// first the length N is given as an INT16. Then N bytes follow which are
-    /// the UTF-8 encoding of the character sequence. A null value is encoded with
-    /// length of -1 and there are no following bytes.
-    NullableString,
-    /// Represents a raw sequence of bytes. First the length N is given as an INT32.
-    /// Then N bytes follow.
-    Bytes,
-    /// Represents a raw sequence of bytes or null. For non-null values,
-    /// first the length N is given as an INT32. Then N bytes follow.
-    /// A null value is encoded with length of -1 and there are no following bytes.
-    NullableBytes,
-    /// Represents a sequence of Kafka records as  NULLABLE_BYTES.
-    Records,
-}
-
-impl Primitive {
-    fn from(raw: &str) -> Primitive {
-        match raw {
-            "BOOLEAN" => Primitive::Boolean,
-            "INT8" => Primitive::Int8,
-            "INT16" => Primitive::Int16,
-            "INT32" => Primitive::Int32,
-            "INT64" => Primitive::Int64,
-            "UINT32" => Primitive::Uint32,
-            "VARINT" => Primitive::Varint,
-            "VARLONG" => Primitive::Varlong,
-            "STRING" => Primitive::String,
-            "NULLABLE_STRING" => Primitive::NullableString,
-            "BYTES" => Primitive::Bytes,
-            "NULLABLE_BYTES" => Primitive::NullableBytes,
-            "RECORDS" => Primitive::Records,
-            _ => unreachable!("Unknown primitive: {}", raw),
-        }
-    }
-
-    fn is_valid(raw: &str) -> bool {
-        lazy_static! {
-            static ref VALIDS: HashSet<String> = {
-                let s: HashSet<_> = vec![
-                    "BOOLEAN",
-                    "INT8",
-                    "INT16",
-                    "INT32",
-                    "INT64",
-                    "UINT32",
-                    "VARINT",
-                    "VARLONG",
-                    "STRING",
-                    "NULLABLE_STRING",
-                    "BYTES",
-                    "NULLABLE_BYTES",
-                    "RECORDS",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-                s
-            };
-        }
-        VALIDS.contains(raw)
-    }
-
-    fn rust_type(&self) -> String {
-        match *self {
-            Primitive::Boolean => "bool".to_string(),
-            Primitive::Int8 => "i8".to_string(),
-            Primitive::Int16 => "i16".to_string(),
-            Primitive::Int32 => "i32".to_string(),
-            Primitive::Int64 => "i64".to_string(),
-            Primitive::Uint32 => "u32".to_string(),
-            Primitive::Varint => "crate::types::Varint".to_string(),
-            Primitive::Varlong => "crate::types::Varlong".to_string(),
-            Primitive::String => "String".to_string(),
-            Primitive::NullableString => "crate::types::NullableString".to_string(),
-            Primitive::Bytes => "crate::types::Bytes".to_string(),
-            Primitive::NullableBytes => "crate::types::NullableBytes".to_string(),
-            Primitive::Records => "crate::types::Records".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Spec<'a> {
-    Value(Primitive),
-    Array(Box<Spec<'a>>),
-    Struct(Vec<(&'a str, Spec<'a>)>),
-}
-
 fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error> {
     #[derive(Debug, Clone)]
     enum Field<'a> {
@@ -650,6 +538,118 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
     }
 
     Ok((name, version, Spec::Struct(specs)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Primitive {
+    /// Represents a boolean value in a byte. Values 0 and 1 are used to
+    /// represent false and true respectively. When reading a boolean value,
+    /// any non-zero value is considered true.
+    Boolean,
+    /// Represents an integer between -2^7 and 2^7-1 inclusive.
+    Int8,
+    /// Represents an integer between -2^15 and 2^15-1 inclusive.
+    /// The values are encoded using two bytes in network byte order (big-endian).
+    Int16,
+    /// Represents an integer between -2^31 and 2^31-1 inclusive.
+    /// The values are encoded using four bytes in network byte order (big-endian).
+    Int32,
+    /// Represents an integer between -2^63 and 2^63-1 inclusive.
+    /// The values are encoded using eight bytes in network byte order (big-endian).
+    Int64,
+    /// Represents an integer between 0 and 2^32-1 inclusive.
+    /// The values are encoded using four bytes in network byte order (big-endian).
+    Uint32,
+    /// Represents an integer between -2^31 and 2^31-1 inclusive.
+    /// Encoding follows the variable-length zig-zag encoding from Google Protocol Buffers.
+    Varint,
+    /// Represents an integer between -2^63 and 2^63-1 inclusive.
+    /// Encoding follows the variable-length zig-zag encoding from Google Protocol Buffers.
+    Varlong,
+    /// Represents a sequence of characters. First the length N is given as an INT16.
+    /// Then N bytes follow which are the UTF-8 encoding of the character sequence.
+    /// Length must not be negative.
+    String,
+    /// Represents a sequence of characters or null. For non-null strings,
+    /// first the length N is given as an INT16. Then N bytes follow which are
+    /// the UTF-8 encoding of the character sequence. A null value is encoded with
+    /// length of -1 and there are no following bytes.
+    NullableString,
+    /// Represents a raw sequence of bytes. First the length N is given as an INT32.
+    /// Then N bytes follow.
+    Bytes,
+    /// Represents a raw sequence of bytes or null. For non-null values,
+    /// first the length N is given as an INT32. Then N bytes follow.
+    /// A null value is encoded with length of -1 and there are no following bytes.
+    NullableBytes,
+    /// Represents a sequence of Kafka records as NULLABLE_BYTES.
+    Records,
+}
+
+impl Primitive {
+    fn from(raw: &str) -> Primitive {
+        match raw {
+            "BOOLEAN" => Primitive::Boolean,
+            "INT8" => Primitive::Int8,
+            "INT16" => Primitive::Int16,
+            "INT32" => Primitive::Int32,
+            "INT64" => Primitive::Int64,
+            "UINT32" => Primitive::Uint32,
+            "VARINT" => Primitive::Varint,
+            "VARLONG" => Primitive::Varlong,
+            "STRING" => Primitive::String,
+            "NULLABLE_STRING" => Primitive::NullableString,
+            "BYTES" => Primitive::Bytes,
+            "NULLABLE_BYTES" => Primitive::NullableBytes,
+            "RECORDS" => Primitive::Records,
+            _ => unreachable!("Unknown primitive: {}", raw),
+        }
+    }
+
+    fn is_valid(raw: &str) -> bool {
+        lazy_static! {
+            static ref VALIDS: HashSet<String> = {
+                let s: HashSet<_> = vec![
+                    "BOOLEAN",
+                    "INT8",
+                    "INT16",
+                    "INT32",
+                    "INT64",
+                    "UINT32",
+                    "VARINT",
+                    "VARLONG",
+                    "STRING",
+                    "NULLABLE_STRING",
+                    "BYTES",
+                    "NULLABLE_BYTES",
+                    "RECORDS",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+                s
+            };
+        }
+        VALIDS.contains(raw)
+    }
+
+    fn rust_type(&self) -> String {
+        match *self {
+            Primitive::Boolean => "bool".to_string(),
+            Primitive::Int8 => "i8".to_string(),
+            Primitive::Int16 => "i16".to_string(),
+            Primitive::Int32 => "i32".to_string(),
+            Primitive::Int64 => "i64".to_string(),
+            Primitive::Uint32 => "u32".to_string(),
+            Primitive::Varint => "crate::types::Varint".to_string(),
+            Primitive::Varlong => "crate::types::Varlong".to_string(),
+            Primitive::String => "String".to_string(),
+            Primitive::NullableString => "crate::types::NullableString".to_string(),
+            Primitive::Bytes => "crate::types::Bytes".to_string(),
+            Primitive::NullableBytes => "crate::types::NullableBytes".to_string(),
+            Primitive::Records => "crate::types::Records".to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
