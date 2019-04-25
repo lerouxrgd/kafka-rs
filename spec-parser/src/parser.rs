@@ -8,7 +8,7 @@ use pest::Parser as _;
 use pest_derive::*;
 use regex::Regex;
 
-use crate::templates::shape;
+use crate::templates::motif;
 
 /// Describes errors happened while parsing protocol specs.
 #[derive(Fail, Debug)]
@@ -26,9 +26,9 @@ impl ParserError {
 pub struct ProtocolParser;
 
 pub struct Parser<'a> {
-    err_code_rows: shape::ErrorCodeRows,
-    api_key_rows: shape::ApiKeyRows,
-    struct_specs: IndexMap<String, VersionedSpecs<'a>>,
+    err_code_rows: motif::ErrorCodeRows,
+    api_key_rows: motif::ApiKeyRows,
+    req_resp_specs: IndexMap<String, VersionedSpecs<'a>>,
 }
 
 /// Vector of (version, spec, fields_doc)
@@ -50,7 +50,7 @@ impl<'a> Parser<'a> {
 
         let mut err_code_rows = vec![];
         let mut api_key_rows = vec![];
-        let mut struct_specs = IndexMap::new();
+        let mut req_resp_specs = IndexMap::new();
 
         let mut skip_req_resp = 19;
         for target in parsed_file.into_inner() {
@@ -145,9 +145,9 @@ impl<'a> Parser<'a> {
                                     fields_doc,
                                 );
 
-                                match struct_specs.get_mut(&name) {
+                                match req_resp_specs.get_mut(&name) {
                                     None => {
-                                        struct_specs.insert(name, vec![version]);
+                                        req_resp_specs.insert(name, vec![version]);
                                     }
                                     Some(versions) => {
                                         versions.push(version);
@@ -167,40 +167,28 @@ impl<'a> Parser<'a> {
         Ok(Parser {
             err_code_rows,
             api_key_rows,
-            struct_specs,
+            req_resp_specs,
         })
     }
 
-    fn iter_req_resp(&self) -> IterReqResp {
-        IterReqResp {
-            index: 0,
-            specs: &self.struct_specs,
-        }
-    }
-}
+    fn iter_req_resp(&self) -> impl Iterator<Item = (&String, &VersionedSpecs)> {
+        let mut i = 0;
 
-pub struct IterReqResp<'a> {
-    index: usize,
-    specs: &'a IndexMap<String, VersionedSpecs<'a>>,
-}
-
-impl<'a> Iterator for IterReqResp<'a> {
-    type Item = (&'a String, &'a VersionedSpecs<'a>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let data = self.specs.get_index(self.index);
-        self.index += 1;
-        data
+        std::iter::from_fn(move || {
+            let req_resp = self.req_resp_specs.get_index(i);
+            i += 1;
+            req_resp
+        })
     }
 }
 
 trait TemplateInput {
-    fn enum_vfields(&self) -> shape::EnumVfields;
-    fn mod_vstructs(&self) -> shape::ModVstructs;
+    fn enum_vfields(&self) -> motif::EnumVfields;
+    fn mod_vstructs(&self) -> motif::ModVstructs;
 }
 
 impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
-    fn enum_vfields(&self) -> shape::EnumVfields {
+    fn enum_vfields(&self) -> motif::EnumVfields {
         fn rust_type_for(
             field_name: &str,
             field_spec: &Spec,
@@ -225,7 +213,7 @@ impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
         self.1
             .iter()
             .map(|(version, spec, docs)| {
-                let fields: shape::Fields = if let Spec::Struct(fields) = spec {
+                let fields: motif::Fields = if let Spec::Struct(fields) = spec {
                     fields
                         .iter()
                         .map(|(field_name, field_spec)| {
@@ -247,7 +235,7 @@ impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
             .collect::<Vec<_>>()
     }
 
-    fn mod_vstructs(&self) -> shape::ModVstructs {
+    fn mod_vstructs(&self) -> motif::ModVstructs {
         fn rust_type_for(field_name: &str, field_spec: &Spec) -> String {
             match field_spec {
                 Spec::Value(primitive) => primitive.rust_type(),
@@ -304,7 +292,7 @@ impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
                 structs
                     .iter()
                     .map(|(struct_name, struct_spec)| {
-                        let struct_fields: shape::Fields = if let Spec::Struct(fields) = struct_spec
+                        let struct_fields: motif::Fields = if let Spec::Struct(fields) = struct_spec
                         {
                             fields
                                 .iter()
@@ -678,10 +666,12 @@ mod tests {
     #[ignore]
     fn parse_req_resp() {
         let parser = Parser::new().unwrap();
-        println!("{:?}", parser.struct_specs.get_index(0));
+        println!("{:?}", parser.req_resp_specs.get_index(0));
         println!(
             "{:?}",
-            parser.struct_specs.get_index(parser.struct_specs.len() - 1)
+            parser
+                .req_resp_specs
+                .get_index(parser.req_resp_specs.len() - 1)
         );
     }
 
