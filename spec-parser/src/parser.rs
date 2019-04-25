@@ -182,12 +182,18 @@ impl<'a> Parser<'a> {
     }
 }
 
-trait TemplateInput {
+trait ReqRespMotif {
+    fn enum_name(&self) -> String;
     fn enum_vfields(&self) -> motif::EnumVfields;
+    fn mod_name(&self) -> String;
     fn mod_vstructs(&self) -> motif::ModVstructs;
 }
 
-impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
+impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
+    fn enum_name(&self) -> String {
+        self.0.clone()
+    }
+
     fn enum_vfields(&self) -> motif::EnumVfields {
         fn rust_type_for(
             field_name: &str,
@@ -233,6 +239,10 @@ impl<'a> TemplateInput for (&'a String, &'a VersionedSpecs<'a>) {
                 fields
             })
             .collect::<Vec<_>>()
+    }
+
+    fn mod_name(&self) -> String {
+        self.0.to_snake_case()
     }
 
     fn mod_vstructs(&self) -> motif::ModVstructs {
