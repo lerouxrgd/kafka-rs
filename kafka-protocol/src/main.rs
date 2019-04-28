@@ -1,18 +1,12 @@
-#![feature(specialization)]
-
-mod codec;
-mod model;
-mod types;
-
 use std::io::prelude::*;
 use std::net::TcpStream;
 
+use kafka_protocol::codec::*;
+use kafka_protocol::model::*;
+use kafka_protocol::types::*;
+
 fn wip_requests() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:9092")?;
-
-    use crate::codec::*;
-    use crate::model::*;
-    use crate::types::*;
 
     let header = HeaderRequest {
         api_key: ApiKey::ApiVersions,

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use failure::{Error, Fail};
@@ -10,7 +11,7 @@ use regex::Regex;
 
 use crate::templates::motif;
 
-/// Describes errors happened while parsing protocol specs.
+/// Describes errors that occured while parsing protocol specs.
 #[derive(Fail, Debug)]
 #[fail(display = "Parser failure: {}", _0)]
 pub struct ParserError(String);
@@ -25,24 +26,24 @@ impl ParserError {
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
 
-pub struct Parser<'a> {
-    err_code_rows: motif::ErrorCodeRows,
-    api_key_rows: motif::ApiKeyRows,
+pub struct SpecParser<'a> {
+    pub err_code_rows: motif::ErrorCodeRows,
+    pub api_key_rows: motif::ApiKeyRows,
     req_resp_specs: IndexMap<String, VersionedSpecs<'a>>,
 }
 
-/// Vector of (version, spec, fields_doc)
-type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<String, String>)>;
+/// Vector of (version, spec, fields_doc = {f_name -> doc_string})
+type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<Cow<'a, str>, String>)>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Spec<'a> {
     Value(Primitive),
     Array(Box<Spec<'a>>),
-    Struct(Vec<(&'a str, Spec<'a>)>),
+    Struct(Vec<(Cow<'a, str>, Spec<'a>)>),
 }
 
-impl<'a> Parser<'a> {
-    fn new() -> Result<Self, Error> {
+impl<'a> SpecParser<'a> {
+    pub fn new() -> Result<Self, Error> {
         let raw = include_str!("protocol.html");
         let parsed_file = ProtocolParser::parse(Rule::file, &raw)?
             .next() // there is exactly one { file }
@@ -52,7 +53,7 @@ impl<'a> Parser<'a> {
         let mut api_key_rows = vec![];
         let mut req_resp_specs = IndexMap::new();
 
-        let mut skip_req_resp = 19;
+        let mut skip_req_resp = 0;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -134,7 +135,7 @@ impl<'a> Parser<'a> {
                                             .into_iter()
                                             .map(|td| td.into_inner().as_str()) // inner { content }
                                             .collect::<Vec<_>>();
-                                        (String::from(row[0]), String::from(row[1]))
+                                        (clean_name(row[0]), String::from(row[1]))
                                     })
                                     .collect::<HashMap<_, _>>();
 
@@ -164,14 +165,14 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(Parser {
+        Ok(SpecParser {
             err_code_rows,
             api_key_rows,
             req_resp_specs,
         })
     }
 
-    fn iter_req_resp(&self) -> impl Iterator<Item = (&String, &VersionedSpecs)> {
+    pub fn iter_req_resp(&self) -> impl Iterator<Item = (&String, &VersionedSpecs)> {
         let mut i = 0;
 
         std::iter::from_fn(move || {
@@ -182,7 +183,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-trait ReqRespMotif {
+pub trait ReqRespMotif {
     fn enum_name(&self) -> String;
     fn enum_vfields(&self) -> motif::EnumVfields;
     fn mod_name(&self) -> String;
@@ -226,7 +227,7 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
                             (
                                 field_name.to_string(),
                                 rust_type_for(field_name, field_spec, self.0, version),
-                                docs.get(*field_name).map_or_else(
+                                docs.get(field_name).map_or_else(
                                     || String::default(),
                                     |doc| capped_comment(doc, 8),
                                 ),
@@ -258,21 +259,20 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
             let mut deps = Vec::new();
             let mut q = VecDeque::new();
 
+            // Initializes the specs exploration queue
             if let Spec::Struct(fields) = spec {
                 for (f_name, f_spec) in fields {
                     match f_spec {
                         Spec::Value(_) => (),
                         Spec::Array(inner) => q.push_back((f_name.to_camel_case(), &**inner)),
-                        Spec::Struct(_) => {
-                            q.push_back((f_name.to_camel_case(), f_spec));
-                            deps.push((f_name.to_camel_case(), f_spec));
-                        }
+                        Spec::Struct(_) => q.push_back((f_name.to_camel_case(), f_spec)),
                     }
                 }
             } else {
                 unreachable!("All specs are Spec::Struct(_)");
             }
 
+            // Builds the specs dependencies stack
             while let Some((ref f_name, ref f_spec)) = q.pop_front() {
                 match (f_name, f_spec) {
                     (_, Spec::Value(_)) => (),
@@ -287,7 +287,7 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
                                 Spec::Struct(_) => q.push_back((f_name.to_camel_case(), f_spec)),
                             }
                         }
-                        deps.push((f_name.to_camel_case(), f_spec));
+                        deps.push((f_name.to_camel_case(), &**f_spec));
                     }
                 }
             }
@@ -310,7 +310,7 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
                                     (
                                         field_name.to_string(),
                                         rust_type_for(field_name, field_spec),
-                                        docs.get(*field_name).map_or_else(
+                                        docs.get(field_name).map_or_else(
                                             || String::default(),
                                             |doc| capped_comment(doc, 12),
                                         ),
@@ -324,13 +324,22 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
                     })
                     .collect::<Vec<_>>()
             })
+            .filter(|versions| versions.len() > 0)
             .collect::<Vec<_>>()
+    }
+}
+
+fn clean_name(s: &str) -> Cow<'_, str> {
+    if s.contains('\'') {
+        s.replace('\'', "").into()
+    } else {
+        s.into()
     }
 }
 
 fn capped_comment(text: &str, nb_indent: usize) -> String {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"\b.{1,55}\b\W?").expect("Invalid regex");
+        static ref RE: Regex = Regex::new(r"\b.{1,70}\b\W?").expect("Invalid regex");
     }
     let comment = if nb_indent > 0 {
         format!("{}///", " ".repeat(nb_indent))
@@ -349,8 +358,8 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
 fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error> {
     #[derive(Debug, Clone)]
     enum Field<'a> {
-        Simple(&'a str),
-        Array(&'a str),
+        Simple(Cow<'a, str>),
+        Array(Cow<'a, str>),
     }
 
     impl<'a> Field<'a> {
@@ -358,9 +367,9 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
             if name.chars().nth(0).expect("no first char") == '['
                 && name.chars().last().expect("no last char") == ']'
             {
-                Field::Array(&name[1..name.len() - 1])
+                Field::Array(clean_name(&name[1..name.len() - 1]))
             } else {
-                Field::Simple(name)
+                Field::Simple(clean_name(name))
             }
         }
     }
@@ -418,21 +427,21 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
 
     #[derive(Debug, Clone)]
     struct Line<'a> {
-        name: &'a str,
+        name: Cow<'a, str>,
         kind: Kind<'a>,
     }
 
     fn insert_spec<'a>(
-        mut specs: HashMap<&'a str, Spec<'a>>,
+        mut specs: HashMap<Cow<'a, str>, Spec<'a>>,
         line: Line<'a>,
-    ) -> Result<HashMap<&'a str, Spec<'a>>, Error> {
+    ) -> Result<HashMap<Cow<'a, str>, Spec<'a>>, Error> {
         match line {
             Line {
                 kind: Kind::Value(primitive),
                 name,
                 ..
             } => {
-                specs.insert(name.clone(), Spec::Value(primitive));
+                specs.insert(name.into(), Spec::Value(primitive));
             }
 
             Line {
@@ -440,7 +449,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
                 name,
                 ..
             } => {
-                specs.insert(name.clone(), Spec::Array(Box::new(Spec::Value(primitive))));
+                specs.insert(name.into(), Spec::Array(Box::new(Spec::Value(primitive))));
             }
 
             Line {
@@ -451,21 +460,21 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
                 let mut inner_specs = vec![];
                 for field in fields {
                     match field {
-                        Field::Simple(name) => {
+                        Field::Simple(ref name) => {
                             let spec = specs.get(name).ok_or_else(|| {
                                 ParserError::new(format!("Missing spec for field: {}", name))
                             })?;
-                            inner_specs.push((name, spec.clone()));
+                            inner_specs.push((name.clone(), spec.clone()));
                         }
-                        Field::Array(name) => {
+                        Field::Array(ref name) => {
                             let spec = specs.get(name).ok_or_else(|| {
                                 ParserError::new(format!("Missing spec for field: {}", name))
                             })?;
-                            inner_specs.push((name, Spec::Array(Box::new(spec.clone()))));
+                            inner_specs.push((name.clone(), Spec::Array(Box::new(spec.clone()))));
                         }
                     }
                 }
-                specs.insert(name, Spec::Struct(inner_specs));
+                specs.insert(name.into(), Spec::Struct(inner_specs));
             }
         };
 
@@ -502,7 +511,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
         .map(|s| {
             let parts = s.split(" =>").collect::<Vec<_>>();
 
-            let name = parts.get(0).expect(&format!("Invalid line: {}", s)).trim();
+            let name = clean_name(parts.get(0).expect(&format!("Invalid line: {}", s)).trim());
             let kind = Kind::for_field(parts.get(1).expect(&format!("Invalid line: {}", s)));
 
             Line { name, kind }
@@ -520,13 +529,13 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
         for field in fields {
             match field {
                 Field::Simple(name) => {
-                    let field_spec = fields_spec.get(name).ok_or_else(|| {
+                    let field_spec = fields_spec.get(&*name).ok_or_else(|| {
                         ParserError::new(format!("Missing spec for root field: {}", name))
                     })?;
                     specs.push((name, field_spec.clone()));
                 }
                 Field::Array(name) => {
-                    let field_spec = fields_spec.get(name).ok_or_else(|| {
+                    let field_spec = fields_spec.get(&*name).ok_or_else(|| {
                         ParserError::new(format!("Missing spec for root field: {}", name))
                     })?;
                     specs.push((name, Spec::Array(Box::new(field_spec.clone()))));
@@ -657,7 +666,7 @@ mod tests {
     #[test]
     #[ignore]
     fn parse_error_codes() {
-        let parser = Parser::new().unwrap();
+        let parser = SpecParser::new().unwrap();
         for row in parser.err_code_rows {
             println!("{:?}", row);
         }
@@ -666,7 +675,7 @@ mod tests {
     #[test]
     #[ignore]
     fn parse_api_keys() {
-        let parser = Parser::new().unwrap();
+        let parser = SpecParser::new().unwrap();
         for row in parser.api_key_rows {
             println!("{:?}", row);
         }
@@ -675,7 +684,7 @@ mod tests {
     #[test]
     #[ignore]
     fn parse_req_resp() {
-        let parser = Parser::new().unwrap();
+        let parser = SpecParser::new().unwrap();
         println!("{:?}", parser.req_resp_specs.get_index(0));
         println!(
             "{:?}",
@@ -687,22 +696,25 @@ mod tests {
 
     #[test]
     fn parse_enum_vfields() {
-        let parser = Parser::new().unwrap();
-        let req_resp = parser.iter_req_resp().next().unwrap();
+        let parser = SpecParser::new().unwrap();
+        let mut it = parser.iter_req_resp();
+        let req_resp = it.next().unwrap();
         let vfields = req_resp.enum_vfields();
         println!("{:?}", req_resp.0);
         println!("{:?}", req_resp.1.get(0).unwrap());
-        println!("{:?}", vfields.get(0).unwrap());
+        println!("{:?}", vfields);
     }
 
     #[test]
     fn parse_mod_vstructs() {
-        let parser = Parser::new().unwrap();
-        let req_resp = parser.iter_req_resp().next().unwrap();
+        let parser = SpecParser::new().unwrap();
+        let mut it = parser.iter_req_resp();
+        let req_resp = it.next().unwrap();
+        let req_resp = it.next().unwrap();
         let vstructs = req_resp.mod_vstructs();
         println!("{:?}", req_resp.0.to_snake_case());
         println!("{:?}", req_resp.1.get(0).unwrap());
-        println!("{:?}", vstructs.get(0).unwrap());
+        println!("{:?}", vstructs);
     }
 
     #[test]
@@ -729,28 +741,28 @@ mod tests {
         assert_eq!(
             Struct(vec![
                 (
-                    "create_topic_requests",
+                    "create_topic_requests".into(),
                     Array(Box::new(Struct(vec![
-                        ("topic", Value(Primitive::String)),
-                        ("num_partitions", Value(Primitive::Int32)),
-                        ("replication_factor", Value(Primitive::Int16)),
+                        ("topic".into(), Value(Primitive::String)),
+                        ("num_partitions".into(), Value(Primitive::Int32)),
+                        ("replication_factor".into(), Value(Primitive::Int16)),
                         (
-                            "replica_assignment",
+                            "replica_assignment".into(),
                             Array(Box::new(Struct(vec![
-                                ("partition", Value(Primitive::Int32)),
-                                ("replicas", Array(Box::new(Value(Primitive::Int32))))
+                                ("partition".into(), Value(Primitive::Int32)),
+                                ("replicas".into(), Array(Box::new(Value(Primitive::Int32))))
                             ])))
                         ),
                         (
-                            "config_entries",
+                            "config_entries".into(),
                             Array(Box::new(Struct(vec![
-                                ("config_name", Value(Primitive::String)),
-                                ("config_value", Value(Primitive::NullableString))
+                                ("config_name".into(), Value(Primitive::String)),
+                                ("config_value".into(), Value(Primitive::NullableString))
                             ])))
                         )
                     ])))
                 ),
-                ("timeout", Value(Primitive::Int32))
+                ("timeout".into(), Value(Primitive::Int32))
             ]),
             spec
         );

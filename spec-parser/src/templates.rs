@@ -1,4 +1,4 @@
-use failure::{Error, Fail, SyncFailure};
+use failure::{Error, SyncFailure};
 use tera::{Context, Tera};
 
 pub mod motif {
@@ -37,7 +37,7 @@ pub struct HeaderResponse {
 pub const ERROR_CODES_TERA: &str = "error_codes.tera";
 pub const ERROR_CODES_TEMPLATE: &str = r#"
 ///  Numeric codes to indicate what problem occurred on the Kafka server.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(i16)]
 pub enum ErrorCode {
     {%- for e in err_codes %}
@@ -50,7 +50,7 @@ pub enum ErrorCode {
 pub const API_KEYS_TERA: &str = "api_keys.tera";
 pub const API_KEYS_TEMPLATE: &str = r#"
 ///  Numeric codes used to specify request types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(i16)]
 pub enum ApiKey {
     {%- for k in api_keys %}
@@ -61,7 +61,7 @@ pub enum ApiKey {
 
 pub const REQ_RESP_ENUM_TERA: &str = "req_resp_enum.tera";
 pub const REQ_RESP_ENUM_TEMPLATE: &str = r#"
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 enum {{ name }} {
     {%- for fields in versions %}
     V{{ loop.index0 }} {
@@ -80,7 +80,7 @@ pub mod {{ name }} {
     {%- for ver in versions %}
     pub mod v{{ loop.index0 }} {
         {%- for struct in ver %}
-        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct {{ struct.0 }} {
             {%- for f in struct.1 %}
 {{ f.2 }}
@@ -92,21 +92,6 @@ pub mod {{ name }} {
     {%- endfor %}
 }
 "#;
-
-/// Describes errors happened while templating Rust code.
-#[derive(Fail, Debug)]
-#[fail(display = "Template failure: {}", _0)]
-pub struct TemplateError(String);
-
-impl TemplateError {
-    pub fn new<S: Into<String>>(msg: S) -> TemplateError {
-        TemplateError(msg.into())
-    }
-}
-
-macro_rules! err(
-    ($($arg:tt)*) => (Err(TemplateError::new(format!($($arg)*))))
-);
 
 /// Fix for converting error-chain to failure.
 /// see  https://github.com/rust-lang-nursery/failure/issues/109
