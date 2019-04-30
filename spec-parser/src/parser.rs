@@ -43,8 +43,7 @@ pub enum Spec<'a> {
 }
 
 impl<'a> SpecParser<'a> {
-    pub fn new() -> Result<Self, Error> {
-        let raw = include_str!("protocol.html");
+    pub fn new(raw: &'a str) -> Result<Self, Error> {
         let parsed_file = ProtocolParser::parse(Rule::file, &raw)?
             .next() // there is exactly one { file }
             .expect("Unreachable file rule");
@@ -53,7 +52,6 @@ impl<'a> SpecParser<'a> {
         let mut api_key_rows = vec![];
         let mut req_resp_specs = IndexMap::new();
 
-        let mut skip_req_resp = 0;
         for target in parsed_file.into_inner() {
             match target.as_rule() {
                 Rule::error_codes => {
@@ -103,12 +101,6 @@ impl<'a> SpecParser<'a> {
                 }
 
                 Rule::req_resp => {
-                    // TODO: remove that, skipping stuff is just for dev
-                    if skip_req_resp > 0 {
-                        skip_req_resp -= 1;
-                        continue;
-                    }
-
                     let parsed_spec = ProtocolParser::parse(Rule::spec, target.as_str())?
                         .next() // there is exactly one { spec }
                         .expect("Unreachable spec rule");
@@ -528,17 +520,17 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
     if let Kind::Struct(fields) = root {
         for field in fields {
             match field {
-                Field::Simple(name) => {
-                    let field_spec = fields_spec.get(&*name).ok_or_else(|| {
+                Field::Simple(ref name) => {
+                    let field_spec = fields_spec.get(name).ok_or_else(|| {
                         ParserError::new(format!("Missing spec for root field: {}", name))
                     })?;
-                    specs.push((name, field_spec.clone()));
+                    specs.push((name.clone(), field_spec.clone()));
                 }
-                Field::Array(name) => {
-                    let field_spec = fields_spec.get(&*name).ok_or_else(|| {
+                Field::Array(ref name) => {
+                    let field_spec = fields_spec.get(name).ok_or_else(|| {
                         ParserError::new(format!("Missing spec for root field: {}", name))
                     })?;
-                    specs.push((name, Spec::Array(Box::new(field_spec.clone()))));
+                    specs.push((name.clone(), Spec::Array(Box::new(field_spec.clone()))));
                 }
             }
         }
@@ -666,7 +658,8 @@ mod tests {
     #[test]
     #[ignore]
     fn parse_error_codes() {
-        let parser = SpecParser::new().unwrap();
+        let raw = include_str!("protocol.html");
+        let parser = SpecParser::new(raw).unwrap();
         for row in parser.err_code_rows {
             println!("{:?}", row);
         }
@@ -675,7 +668,8 @@ mod tests {
     #[test]
     #[ignore]
     fn parse_api_keys() {
-        let parser = SpecParser::new().unwrap();
+        let raw = include_str!("protocol.html");
+        let parser = SpecParser::new(raw).unwrap();
         for row in parser.api_key_rows {
             println!("{:?}", row);
         }
@@ -684,7 +678,8 @@ mod tests {
     #[test]
     #[ignore]
     fn parse_req_resp() {
-        let parser = SpecParser::new().unwrap();
+        let raw = include_str!("protocol.html");
+        let parser = SpecParser::new(raw).unwrap();
         println!("{:?}", parser.req_resp_specs.get_index(0));
         println!(
             "{:?}",
@@ -696,7 +691,8 @@ mod tests {
 
     #[test]
     fn parse_enum_vfields() {
-        let parser = SpecParser::new().unwrap();
+        let raw = include_str!("protocol.html");
+        let parser = SpecParser::new(raw).unwrap();
         let mut it = parser.iter_req_resp();
         let req_resp = it.next().unwrap();
         let vfields = req_resp.enum_vfields();
@@ -707,7 +703,8 @@ mod tests {
 
     #[test]
     fn parse_mod_vstructs() {
-        let parser = SpecParser::new().unwrap();
+        let raw = include_str!("protocol.html");
+        let parser = SpecParser::new(raw).unwrap();
         let mut it = parser.iter_req_resp();
         let req_resp = it.next().unwrap();
         let req_resp = it.next().unwrap();

@@ -61,3 +61,9 @@ impl Deref for NullableBytes {
         &self.0
     }
 }
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum Records {
+    Batch,
+    Control,
+}

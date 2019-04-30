@@ -19,7 +19,7 @@ pub mod motif {
     pub type ModVstructs = Vec<Vec<(String, Fields)>>;
 }
 
-pub const HEADERS: &str = r#"
+const HEADERS: &str = r#"
 #[derive(Debug, serde::Serialize)]
 pub struct HeaderRequest {
     pub api_key: ApiKey,
@@ -34,8 +34,8 @@ pub struct HeaderResponse {
 }
 "#;
 
-pub const ERROR_CODES_TERA: &str = "error_codes.tera";
-pub const ERROR_CODES_TEMPLATE: &str = r#"
+const ERROR_CODES_TERA: &str = "error_codes.tera";
+const ERROR_CODES_TEMPLATE: &str = r#"
 ///  Numeric codes to indicate what problem occurred on the Kafka server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(i16)]
@@ -47,8 +47,8 @@ pub enum ErrorCode {
 }
 "#;
 
-pub const API_KEYS_TERA: &str = "api_keys.tera";
-pub const API_KEYS_TEMPLATE: &str = r#"
+const API_KEYS_TERA: &str = "api_keys.tera";
+const API_KEYS_TEMPLATE: &str = r#"
 ///  Numeric codes used to specify request types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 #[repr(i16)]
@@ -59,10 +59,10 @@ pub enum ApiKey {
 }
 "#;
 
-pub const REQ_RESP_ENUM_TERA: &str = "req_resp_enum.tera";
-pub const REQ_RESP_ENUM_TEMPLATE: &str = r#"
+const REQ_RESP_ENUM_TERA: &str = "req_resp_enum.tera";
+const REQ_RESP_ENUM_TEMPLATE: &str = r#"
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-enum {{ name }} {
+pub enum {{ name }} {
     {%- for fields in versions %}
     V{{ loop.index0 }} {
         {%- for f in fields %}
