@@ -44,7 +44,8 @@ table = { tstart ~ thead ~ tinner ~ tend }
          a =  { "<a" ~ (!">" ~ ("=" | ANY))* ~ ">" ~ content ~ "</a>" }
     tend   = _{ "</table>" }
 
-content = { (!"</" ~ char)* }
+content = { (!end_tags ~ char)* }
+    end_tags = _{ "</pre>" | "</td>" | "</a>" }
 
 char = {
     ASCII_ALPHANUMERIC |

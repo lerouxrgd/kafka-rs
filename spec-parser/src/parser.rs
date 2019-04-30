@@ -70,7 +70,10 @@ impl<'a> SpecParser<'a> {
                             (
                                 String::from(row[0]).to_camel_case(),
                                 String::from(row[1]),
-                                capped_comment(&format!("{} Retriable: {}.", row[3], row[2]), 4),
+                                capped_comment(
+                                    &format!("{} Retriable: {}.", row[3], yes_no(row[2])),
+                                    4,
+                                ),
                             )
                         })
                         .collect::<Vec<_>>();
@@ -318,6 +321,14 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
             })
             .filter(|versions| versions.len() > 0)
             .collect::<Vec<_>>()
+    }
+}
+
+fn yes_no(s: &str) -> String {
+    match s {
+        "True" => "Yes".to_string(),
+        "False" => "No".to_string(),
+        _ => panic!("Invalid True/False: {}", s),
     }
 }
 

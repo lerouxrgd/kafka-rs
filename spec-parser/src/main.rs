@@ -65,13 +65,18 @@ fn main() -> Result<(), failure::Error> {
         ),
     };
 
+    let protocol_url;
     let raw = match args.flag_spec {
         Some(file) => {
+            protocol_url = "local file";
             let mut raw = String::new();
             File::open(&file)?.read_to_string(&mut raw)?;
             raw
         }
-        None => reqwest::get("https://kafka.apache.org/protocol.html")?.text()?,
+        None => {
+            protocol_url = "https://kafka.apache.org/22/protocol.html";
+            reqwest::get(protocol_url)?.text()?
+        }
     };
 
     println!("Generating Rust code to: {}", out_file);
@@ -79,6 +84,7 @@ fn main() -> Result<(), failure::Error> {
     let parser = SpecParser::new(&raw)?;
     let templ = Templater::new()?;
 
+    out.write_all(format!("//! Generated from: {}\n", protocol_url).as_bytes())?;
     out.write_all(templ.str_headers().as_bytes())?;
     out.write_all(templ.str_err_codes(&parser.err_code_rows)?.as_bytes())?;
     out.write_all(templ.str_api_keys(&parser.api_key_rows)?.as_bytes())?;

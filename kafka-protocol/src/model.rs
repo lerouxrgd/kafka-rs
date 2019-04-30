@@ -1,3 +1,5 @@
+//! Generated from: https://kafka.apache.org/22/protocol.html
+
 #[derive(Debug, serde::Serialize)]
 pub struct HeaderRequest {
     pub api_key: ApiKey,
@@ -18,166 +20,160 @@ pub struct HeaderResponse {
 #[repr(i16)]
 pub enum ErrorCode {
     /// The server experienced an unexpected error when processing the request.
-    /// Retriable: False.
+    /// Retriable: No.
     UnknownServerError = -1,
-    /// Retriable: False.
+    /// Retriable: No.
     None = 0,
     /// The requested offset is not within the range of offsets maintained by
-    /// the server. Retriable: False.
+    /// the server. Retriable: No.
     OffsetOutOfRange = 1,
     /// This message has failed its CRC checksum, exceeds the valid size, has
     /// a null key for a compacted topic, or is otherwise corrupt. Retriable:
-    /// True.
+    /// Yes.
     CorruptMessage = 2,
-    /// This server does not host this topic-partition. Retriable: True.
+    /// This server does not host this topic-partition. Retriable: Yes.
     UnknownTopicOrPartition = 3,
-    /// The requested fetch size is invalid. Retriable: False.
+    /// The requested fetch size is invalid. Retriable: No.
     InvalidFetchSize = 4,
     /// There is no leader for this topic-partition as we are in the middle of
-    /// a leadership election. Retriable: True.
+    /// a leadership election. Retriable: Yes.
     LeaderNotAvailable = 5,
-    /// This server is not the leader for that topic-partition. Retriable:
-    /// True.
+    /// This server is not the leader for that topic-partition. Retriable: Yes.
     NotLeaderForPartition = 6,
-    /// The request timed out. Retriable: True.
+    /// The request timed out. Retriable: Yes.
     RequestTimedOut = 7,
-    /// The broker is not available. Retriable: False.
+    /// The broker is not available. Retriable: No.
     BrokerNotAvailable = 8,
     /// The replica is not available for the requested topic-partition.
-    /// Retriable: False.
+    /// Retriable: No.
     ReplicaNotAvailable = 9,
     /// The request included a message larger than the max message size the
-    /// server will accept. Retriable: False.
+    /// server will accept. Retriable: No.
     MessageTooLarge = 10,
-    /// The controller moved to another broker. Retriable: False.
+    /// The controller moved to another broker. Retriable: No.
     StaleControllerEpoch = 11,
-    /// The metadata field of the offset request was too large. Retriable:
-    /// False.
+    /// The metadata field of the offset request was too large. Retriable: No.
     OffsetMetadataTooLarge = 12,
-    /// The server disconnected before a response was received. Retriable:
-    /// True.
+    /// The server disconnected before a response was received. Retriable: Yes.
     NetworkException = 13,
     /// The coordinator is loading and hence can't process requests. Retriable:
-    /// True.
+    /// Yes.
     CoordinatorLoadInProgress = 14,
-    /// The coordinator is not available. Retriable: True.
+    /// The coordinator is not available. Retriable: Yes.
     CoordinatorNotAvailable = 15,
-    /// This is not the correct coordinator. Retriable: True.
+    /// This is not the correct coordinator. Retriable: Yes.
     NotCoordinator = 16,
     /// The request attempted to perform an operation on an invalid topic.
-    /// Retriable: False.
+    /// Retriable: No.
     InvalidTopicException = 17,
     /// The request included message batch larger than the configured segment
-    /// size on the server. Retriable: False.
+    /// size on the server. Retriable: No.
     RecordListTooLarge = 18,
     /// Messages are rejected since there are fewer in-sync replicas than
-    /// required. Retriable: True.
+    /// required. Retriable: Yes.
     NotEnoughReplicas = 19,
     /// Messages are written to the log, but to fewer in-sync replicas than
-    /// required. Retriable: True.
+    /// required. Retriable: Yes.
     NotEnoughReplicasAfterAppend = 20,
     /// Produce request specified an invalid value for required acks.
-    /// Retriable: False.
+    /// Retriable: No.
     InvalidRequiredAcks = 21,
-    /// Specified group generation id is not valid. Retriable: False.
+    /// Specified group generation id is not valid. Retriable: No.
     IllegalGeneration = 22,
     /// The group member's supported protocols are incompatible with those of
     /// existing members or first group member tried to join with empty
-    /// protocol type or empty protocol list. Retriable: False.
+    /// protocol type or empty protocol list. Retriable: No.
     InconsistentGroupProtocol = 23,
-    /// The configured groupId is invalid. Retriable: False.
+    /// The configured groupId is invalid. Retriable: No.
     InvalidGroupId = 24,
-    /// The coordinator is not aware of this member. Retriable: False.
+    /// The coordinator is not aware of this member. Retriable: No.
     UnknownMemberId = 25,
     /// The session timeout is not within the range allowed by the broker (as
     /// configured by group.min.session.timeout.ms and group.max.session.
-    /// timeout.ms). Retriable: False.
+    /// timeout.ms). Retriable: No.
     InvalidSessionTimeout = 26,
-    /// The group is rebalancing, so a rejoin is needed. Retriable: False.
+    /// The group is rebalancing, so a rejoin is needed. Retriable: No.
     RebalanceInProgress = 27,
-    /// The committing offset data size is not valid. Retriable: False.
+    /// The committing offset data size is not valid. Retriable: No.
     InvalidCommitOffsetSize = 28,
     /// Not authorized to access topics: [Topic authorization failed.]
-    /// Retriable: False.
+    /// Retriable: No.
     TopicAuthorizationFailed = 29,
     /// Not authorized to access group: Group authorization failed. Retriable:
-    /// False.
+    /// No.
     GroupAuthorizationFailed = 30,
-    /// Cluster authorization failed. Retriable: False.
+    /// Cluster authorization failed. Retriable: No.
     ClusterAuthorizationFailed = 31,
-    /// The timestamp of the message is out of acceptable range. Retriable:
-    /// False.
+    /// The timestamp of the message is out of acceptable range. Retriable: No.
     InvalidTimestamp = 32,
     /// The broker does not support the requested SASL mechanism. Retriable:
-    /// False.
+    /// No.
     UnsupportedSaslMechanism = 33,
-    /// Request is not valid given the current SASL state. Retriable: False.
+    /// Request is not valid given the current SASL state. Retriable: No.
     IllegalSaslState = 34,
-    /// The version of API is not supported. Retriable: False.
+    /// The version of API is not supported. Retriable: No.
     UnsupportedVersion = 35,
-    /// Topic with this name already exists. Retriable: False.
+    /// Topic with this name already exists. Retriable: No.
     TopicAlreadyExists = 36,
-    /// Number of partitions is below 1. Retriable: False.
+    /// Number of partitions is below 1. Retriable: No.
     InvalidPartitions = 37,
     /// Replication factor is below 1 or larger than the number of available
-    /// brokers. Retriable: False.
+    /// brokers. Retriable: No.
     InvalidReplicationFactor = 38,
-    /// Replica assignment is invalid. Retriable: False.
+    /// Replica assignment is invalid. Retriable: No.
     InvalidReplicaAssignment = 39,
-    /// Configuration is invalid. Retriable: False.
+    /// Configuration is invalid. Retriable: No.
     InvalidConfig = 40,
-    /// This is not the correct controller for this cluster. Retriable: True.
+    /// This is not the correct controller for this cluster. Retriable: Yes.
     NotController = 41,
     /// This most likely occurs because of a request being malformed by the
     /// client library or the message was sent to an incompatible broker. See
-    /// the broker logs for more details. Retriable: False.
+    /// the broker logs for more details. Retriable: No.
     InvalidRequest = 42,
     /// The message format version on the broker does not support the request.
-    /// Retriable: False.
+    /// Retriable: No.
     UnsupportedForMessageFormat = 43,
-    /// Request parameters do not satisfy the configured policy. Retriable:
-    /// False.
+    /// Request parameters do not satisfy the configured policy. Retriable: No.
     PolicyViolation = 44,
-    /// The broker received an out of order sequence number. Retriable: False.
+    /// The broker received an out of order sequence number. Retriable: No.
     OutOfOrderSequenceNumber = 45,
-    /// The broker received a duplicate sequence number. Retriable: False.
+    /// The broker received a duplicate sequence number. Retriable: No.
     DuplicateSequenceNumber = 46,
     /// Producer attempted an operation with an old epoch. Either there is a
     /// newer producer with the same transactionalId, or the producer's
-    /// transaction has been expired by the broker. Retriable: False.
+    /// transaction has been expired by the broker. Retriable: No.
     InvalidProducerEpoch = 47,
     /// The producer attempted a transactional operation in an invalid state.
-    /// Retriable: False.
+    /// Retriable: No.
     InvalidTxnState = 48,
     /// The producer attempted to use a producer id which is not currently
-    /// assigned to its transactional id. Retriable: False.
+    /// assigned to its transactional id. Retriable: No.
     InvalidProducerIdMapping = 49,
     /// The transaction timeout is larger than the maximum value allowed by
     /// the broker (as configured by transaction.max.timeout.ms). Retriable:
-    /// False.
+    /// No.
     InvalidTransactionTimeout = 50,
     /// The producer attempted to update a transaction while another
     /// concurrent operation on the same transaction was ongoing. Retriable:
-    /// False.
+    /// No.
     ConcurrentTransactions = 51,
     /// Indicates that the transaction coordinator sending a WriteTxnMarker is
-    /// no longer the current coordinator for a given producer. Retriable:
-    /// False.
+    /// no longer the current coordinator for a given producer. Retriable: No.
     TransactionCoordinatorFenced = 52,
-    /// Transactional Id authorization failed. Retriable: False.
+    /// Transactional Id authorization failed. Retriable: No.
     TransactionalIdAuthorizationFailed = 53,
-    /// Security features are disabled. Retriable: False.
+    /// Security features are disabled. Retriable: No.
     SecurityDisabled = 54,
     /// The broker did not attempt to execute this operation. This may happen
     /// for batched RPCs where some operations in the batch failed, causing
-    /// the broker to respond without trying the rest. Retriable: False.
+    /// the broker to respond without trying the rest. Retriable: No.
     OperationNotAttempted = 55,
-    /// Disk error when trying to access log file on the disk. Retriable: True.
+    /// Disk error when trying to access log file on the disk. Retriable: Yes.
     KafkaStorageError = 56,
     /// The user-specified log directory is not found in the broker config.
-    /// Retriable: False.
+    /// Retriable: No.
     LogDirNotFound = 57,
-    /// SASL Authentication failed. Retriable: False.
+    /// SASL Authentication failed. Retriable: No.
     SaslAuthenticationFailed = 58,
     /// This exception is raised by the broker if it could not locate the
     /// producer metadata associated with the producerId in question. This
@@ -185,61 +181,60 @@ pub enum ErrorCode {
     /// because their retention time had elapsed. Once the last records of the
     /// producerId are removed, the producer's metadata is removed from the
     /// broker, and future appends by the producer will return this exception.
-    /// Retriable: False.
+    /// Retriable: No.
     UnknownProducerId = 59,
-    /// A partition reassignment is in progress. Retriable: False.
+    /// A partition reassignment is in progress. Retriable: No.
     ReassignmentInProgress = 60,
-    /// Delegation Token feature is not enabled. Retriable: False.
+    /// Delegation Token feature is not enabled. Retriable: No.
     DelegationTokenAuthDisabled = 61,
-    /// Delegation Token is not found on server. Retriable: False.
+    /// Delegation Token is not found on server. Retriable: No.
     DelegationTokenNotFound = 62,
-    /// Specified Principal is not valid Owner/Renewer. Retriable: False.
+    /// Specified Principal is not valid Owner/Renewer. Retriable: No.
     DelegationTokenOwnerMismatch = 63,
     /// Delegation Token requests are not allowed on PLAINTEXT/1-way SSL
-    /// channels and on delegation token authenticated channels. Retriable:
-    /// False.
+    /// channels and on delegation token authenticated channels. Retriable: No.
     DelegationTokenRequestNotAllowed = 64,
-    /// Delegation Token authorization failed. Retriable: False.
+    /// Delegation Token authorization failed. Retriable: No.
     DelegationTokenAuthorizationFailed = 65,
-    /// Delegation Token is expired. Retriable: False.
+    /// Delegation Token is expired. Retriable: No.
     DelegationTokenExpired = 66,
-    /// Supplied principalType is not supported. Retriable: False.
+    /// Supplied principalType is not supported. Retriable: No.
     InvalidPrincipalType = 67,
-    /// The group is not empty. Retriable: False.
+    /// The group is not empty. Retriable: No.
     NonEmptyGroup = 68,
-    /// The group id does not exist. Retriable: False.
+    /// The group id does not exist. Retriable: No.
     GroupIdNotFound = 69,
-    /// The fetch session ID was not found. Retriable: True.
+    /// The fetch session ID was not found. Retriable: Yes.
     FetchSessionIdNotFound = 70,
-    /// The fetch session epoch is invalid. Retriable: True.
+    /// The fetch session epoch is invalid. Retriable: Yes.
     InvalidFetchSessionEpoch = 71,
     /// There is no listener on the leader broker that matches the listener on
-    /// which metadata request was processed. Retriable: True.
+    /// which metadata request was processed. Retriable: Yes.
     ListenerNotFound = 72,
-    /// Topic deletion is disabled. Retriable: False.
+    /// Topic deletion is disabled. Retriable: No.
     TopicDeletionDisabled = 73,
     /// The leader epoch in the request is older than the epoch on the broker
-    /// Retriable: True.
+    /// Retriable: Yes.
     FencedLeaderEpoch = 74,
     /// The leader epoch in the request is newer than the epoch on the broker
-    /// Retriable: True.
+    /// Retriable: Yes.
     UnknownLeaderEpoch = 75,
     /// The requesting client does not support the compression type of given
-    /// partition. Retriable: False.
+    /// partition. Retriable: No.
     UnsupportedCompressionType = 76,
-    /// Broker epoch has changed Retriable: False.
+    /// Broker epoch has changed Retriable: No.
     StaleBrokerEpoch = 77,
     /// The leader high watermark has not caught up from a recent leader
     /// election so the offsets cannot be guaranteed to be monotonically
-    /// increasing Retriable: True.
+    /// increasing Retriable: Yes.
     OffsetNotAvailable = 78,
     /// The group member needs to have a valid member id before actually
-    /// entering a consumer group Retriable: False.
+    /// entering a consumer group Retriable: No.
     MemberIdRequired = 79,
-    /// The preferred leader was not available Retriable: True.
+    /// The preferred leader was not available Retriable: Yes.
     PreferredLeaderNotAvailable = 80,
     /// Consumer group The consumer group has reached its max size. already
-    /// has the configured maximum number of members. Retriable: False.
+    /// has the configured maximum number of members. Retriable: No.
     GroupMaxSizeReached = 81,
 }
 
@@ -2118,6 +2113,438 @@ pub enum MetadataRequest {
         /// fetch metadata for all topics.
         topics: Vec<String>,
     },
+    V4 {
+        /// An array of topics to fetch metadata for. If the topics array is null
+        /// fetch metadata for all topics.
+        topics: Vec<String>,
+        /// If this and the broker config <code>auto.create.topics.enable</code>
+        /// are true, topics that don't exist will be created by the broker.
+        /// Otherwise, no topics will be created by the broker.
+        allow_auto_topic_creation: bool,
+    },
+    V5 {
+        /// An array of topics to fetch metadata for. If the topics array is null
+        /// fetch metadata for all topics.
+        topics: Vec<String>,
+        /// If this and the broker config <code>auto.create.topics.enable</code>
+        /// are true, topics that don't exist will be created by the broker.
+        /// Otherwise, no topics will be created by the broker.
+        allow_auto_topic_creation: bool,
+    },
+    V6 {
+        /// An array of topics to fetch metadata for. If the topics array is null
+        /// fetch metadata for all topics.
+        topics: Vec<String>,
+        /// If this and the broker config <code>auto.create.topics.enable</code>
+        /// are true, topics that don't exist will be created by the broker.
+        /// Otherwise, no topics will be created by the broker.
+        allow_auto_topic_creation: bool,
+    },
+    V7 {
+        /// An array of topics to fetch metadata for. If the topics array is null
+        /// fetch metadata for all topics.
+        topics: Vec<String>,
+        /// If this and the broker config <code>auto.create.topics.enable</code>
+        /// are true, topics that don't exist will be created by the broker.
+        /// Otherwise, no topics will be created by the broker.
+        allow_auto_topic_creation: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum MetadataResponse {
+    V0 {
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v0::Brokers>,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v0::TopicMetadata>,
+    },
+    V1 {
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v1::Brokers>,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v1::TopicMetadata>,
+    },
+    V2 {
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v2::Brokers>,
+        /// The cluster id that this broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v2::TopicMetadata>,
+    },
+    V3 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v3::Brokers>,
+        /// The cluster id that this broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v3::TopicMetadata>,
+    },
+    V4 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v4::Brokers>,
+        /// The cluster id that this broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v4::TopicMetadata>,
+    },
+    V5 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v5::Brokers>,
+        /// The cluster id that this broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v5::TopicMetadata>,
+    },
+    V6 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v6::Brokers>,
+        /// The cluster id that this broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v6::TopicMetadata>,
+    },
+    V7 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// Host and port information for all brokers.
+        brokers: Vec<metadata_response::v7::Brokers>,
+        /// The cluster id that this broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The broker id of the controller broker.
+        controller_id: i32,
+        /// Metadata for requested topics
+        topic_metadata: Vec<metadata_response::v7::TopicMetadata>,
+    },
+}
+
+pub mod metadata_response {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+        }
+    }
+    pub mod v1 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+        }
+    }
+    pub mod v2 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+        }
+    }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+        }
+    }
+    pub mod v4 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+        }
+    }
+    pub mod v5 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+            /// The set of offline replicas of this partition.
+            pub offline_replicas: Vec<i32>,
+        }
+    }
+    pub mod v6 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+            /// The set of offline replicas of this partition.
+            pub offline_replicas: Vec<i32>,
+        }
+    }
+    pub mod v7 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker id.
+            pub node_id: i32,
+            /// The hostname of the broker.
+            pub host: String,
+            /// The port on which the broker accepts requests.
+            pub port: i32,
+            /// The rack of the broker.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Name of topic
+            pub topic: String,
+            /// Indicates if the topic is considered a Kafka internal topic
+            pub is_internal: bool,
+            /// Metadata for each partition of the topic.
+            pub partition_metadata: Vec<PartitionMetadata>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionMetadata {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The id of the broker acting as leader for this partition.
+            pub leader: i32,
+            /// The leader epoch
+            pub leader_epoch: i32,
+            /// The set of all nodes that host this partition.
+            pub replicas: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr: Vec<i32>,
+            /// The set of offline replicas of this partition.
+            pub offline_replicas: Vec<i32>,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
