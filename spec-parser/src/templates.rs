@@ -1,6 +1,7 @@
 use failure::{Error, SyncFailure};
 use tera::{Context, Tera};
 
+/// Types used by templatings methods
 pub mod motif {
     /// Vector of (name, code_id, doc)
     pub type ErrorCodeRows = Vec<(String, String, String)>;
@@ -115,7 +116,7 @@ impl<T, E> ResultExt<T, E> for Result<T, E> {
 }
 
 /// The main, stateless, component for templating. Current implementation uses Tera.
-/// Its responsability is to generate String of Rust code/types for Kafka API.
+/// It generates String of Rust code/types corresponding to Kafka protocol.
 pub struct Templater {
     tera: Tera,
 }
@@ -135,24 +136,26 @@ impl Templater {
         Ok(Templater { tera })
     }
 
+    /// Generates structs for request and response headers
     pub fn str_headers(&self) -> &'static str {
         HEADERS
     }
 
-    /// Generates a Rust enum with all Kafka error codes.
+    /// Generates an enum with all Kafka error codes.
     pub fn str_err_codes(&self, err_codes: &motif::ErrorCodeRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("err_codes", err_codes);
         Ok(self.tera.render(ERROR_CODES_TERA, &ctx).sync()?)
     }
 
-    /// Generates a Rust enum with all Kafka api keys.
+    /// Generates an enum with all Kafka api keys.
     pub fn str_api_keys(&self, api_keys: &motif::ApiKeyRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("api_keys", api_keys);
         Ok(self.tera.render(API_KEYS_TERA, &ctx).sync()?)
     }
 
+    /// Generates a versioned enum for a given request/response of the Kafka protocol
     pub fn str_req_resp_enum(
         &self,
         enum_name: &str,
@@ -164,6 +167,7 @@ impl Templater {
         Ok(self.tera.render(REQ_RESP_ENUM_TERA, &ctx).sync()?)
     }
 
+    /// Generates versioned modules for the inner structs of versioned req_resp enums
     pub fn str_req_resp_mod(
         &self,
         module_name: &str,
@@ -200,7 +204,20 @@ mod tests {
         ]];
 
         let res = templater.str_req_resp_enum(enum_name, &versions).unwrap();
-        println!("{}", res);
+
+        let expected = "
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum CreateTopicsRequest {
+    V0 {
+        /// I am a comment.
+        create_topic_requests: Vec<create_topic_request::v0::CreateTopicsRequests>,
+        /// I am another comment.
+        timeout: i32,
+    },
+}
+";
+
+        assert_eq!(expected, res);
     }
 
     #[test]
@@ -236,6 +253,26 @@ mod tests {
         ]];
 
         let res = templater.str_req_resp_mod(mod_name, &versions).unwrap();
-        println!("{}", res);
+
+        let expected = "
+pub mod create_topics_request {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct CreateTopicsRequests {
+            /// I am a comment.
+            pub topic: String,
+            /// I am another comment.
+            pub num_partitions: i32,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct ReplicaAssignment {
+            /// I am a comment.
+            pub partition: i32,
+        }
+    }
+}
+";
+
+        assert_eq!(expected, res);
     }
 }

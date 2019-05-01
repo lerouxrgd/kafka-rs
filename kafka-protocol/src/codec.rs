@@ -643,7 +643,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 8 {
-            return Err(de::Error::custom("Not enough bytes to deserialize i64"));
+            return Err(de::Error::custom("not enough bytes to deserialize i64"));
         }
         let (val, rest) = self.input.split_at(8);
         self.input = rest;

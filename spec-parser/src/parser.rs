@@ -26,6 +26,8 @@ impl ParserError {
 #[grammar = "protocol.pest"]
 pub struct ProtocolParser;
 
+/// Holds the result of parsing the Kafka protocol html file.
+/// Exposes it in an easily templatable form (template::motif types).
 pub struct SpecParser<'a> {
     pub err_code_rows: motif::ErrorCodeRows,
     pub api_key_rows: motif::ApiKeyRows,
@@ -35,6 +37,7 @@ pub struct SpecParser<'a> {
 /// Vector of (version, spec, fields_doc = {f_name -> doc_string})
 type VersionedSpecs<'a> = Vec<(i16, Spec<'a>, HashMap<Cow<'a, str>, String>)>;
 
+/// Represents a req/resp spec, reflects the form of its recusive BNF definition.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Spec<'a> {
     Value(Primitive),
@@ -43,6 +46,7 @@ pub enum Spec<'a> {
 }
 
 impl<'a> SpecParser<'a> {
+    /// Parses raw file content and return an initialized SpecParser.
     pub fn new(raw: &'a str) -> Result<Self, Error> {
         let parsed_file = ProtocolParser::parse(Rule::file, &raw)?
             .next() // there is exactly one { file }
@@ -54,6 +58,7 @@ impl<'a> SpecParser<'a> {
 
         for target in parsed_file.into_inner() {
             match target.as_rule() {
+                // Parses the error codes table into a templatable enum motif
                 Rule::error_codes => {
                     err_code_rows = target
                         .into_inner() // inner { table }
@@ -68,8 +73,11 @@ impl<'a> SpecParser<'a> {
                                 .map(|td| td.into_inner().as_str()) // inner { content }
                                 .collect::<Vec<_>>();
                             (
+                                // Enum variant name of the error code
                                 String::from(row[0]).to_camel_case(),
+                                // Enum value (i16) of the error code
                                 String::from(row[1]),
+                                // Error's description
                                 capped_comment(
                                     &format!("{} Retriable: {}.", row[3], yes_no(row[2])),
                                     4,
@@ -79,6 +87,7 @@ impl<'a> SpecParser<'a> {
                         .collect::<Vec<_>>();
                 }
 
+                // Parses the API keys table into a templatable enum motif
                 Rule::api_keys => {
                     api_key_rows = target
                         .into_inner() // inner { table }
@@ -98,11 +107,18 @@ impl<'a> SpecParser<'a> {
                                         .as_str()
                                 })
                                 .collect::<Vec<_>>();
-                            (String::from(row[0]), String::from(row[1]))
+                            (
+                                // Enum variant name of the API key
+                                String::from(row[0]),
+                                // Enum value (i16) of the API key
+                                String::from(row[1]),
+                            )
                         })
                         .collect::<Vec<_>>();
                 }
 
+                // Parses all req/resp BNF definitions and description tables
+                // into templatable versioned enum/mod/strut motifs
                 Rule::req_resp => {
                     let parsed_spec = ProtocolParser::parse(Rule::spec, target.as_str())?
                         .next() // there is exactly one { spec }
@@ -178,6 +194,7 @@ impl<'a> SpecParser<'a> {
     }
 }
 
+/// Defines methods required to template a versioned req/resp's enum/mod/strucs.
 pub trait ReqRespMotif {
     fn enum_name(&self) -> String;
     fn enum_vfields(&self) -> motif::EnumVfields;
@@ -191,6 +208,7 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
     }
 
     fn enum_vfields(&self) -> motif::EnumVfields {
+        /// Returns Rust type (as a String) for a given enum struct variant field
         fn rust_type_for(
             field_name: &str,
             field_spec: &Spec,
@@ -242,6 +260,7 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
     }
 
     fn mod_vstructs(&self) -> motif::ModVstructs {
+        /// Returns Rust type (as a String) for a given struct field
         fn rust_type_for(field_name: &str, field_spec: &Spec) -> String {
             match field_spec {
                 Spec::Value(primitive) => primitive.rust_type(),
@@ -250,6 +269,7 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
             }
         }
 
+        /// Returns a stack of the inner structs of a given spec.
         fn spec_deps<'a>(spec: &'a Spec<'_>) -> Vec<(String, &'a Spec<'a>)> {
             let mut deps = Vec::new();
             let mut q = VecDeque::new();
@@ -292,8 +312,8 @@ impl<'a> ReqRespMotif for (&'a String, &'a VersionedSpecs<'a>) {
 
         self.1
             .iter()
-            .map(|(_, spec, docs)| {
-                let structs: Vec<(String, &Spec)> = spec_deps(spec);
+            .map(|(_version, spec, docs)| {
+                let structs = spec_deps(spec);
                 structs
                     .iter()
                     .map(|(struct_name, struct_spec)| {
@@ -701,6 +721,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn parse_enum_vfields() {
         let raw = include_str!("protocol.html");
         let parser = SpecParser::new(raw).unwrap();
@@ -713,11 +734,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn parse_mod_vstructs() {
         let raw = include_str!("protocol.html");
         let parser = SpecParser::new(raw).unwrap();
         let mut it = parser.iter_req_resp();
-        let req_resp = it.next().unwrap();
         let req_resp = it.next().unwrap();
         let vstructs = req_resp.mod_vstructs();
         println!("{:?}", req_resp.0.to_snake_case());
