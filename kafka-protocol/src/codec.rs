@@ -8,6 +8,7 @@ use serde::de::{
 };
 use serde::ser::{self, Serialize};
 
+use crate::model::{HeaderRequest, HeaderResponse};
 use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,9 +62,12 @@ pub struct Serializer {
     buf: Vec<u8>,
 }
 
-pub fn encode_req<T: Serialize>(val: &T) -> Result<Vec<u8>> {
+pub fn encode_req<T: Serialize>(header: &HeaderRequest, val: Option<&T>) -> Result<Vec<u8>> {
     let mut serializer = Serializer::new();
-    val.serialize(&mut serializer)?;
+    header.serialize(&mut serializer)?;
+    if let Some(val) = val {
+        val.serialize(&mut serializer)?;
+    }
     Ok(serializer.bytes())
 }
 
@@ -496,10 +500,9 @@ fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
     }
 }
 
-pub fn read_resp<R, H, T>(rdr: &mut R, version: Option<usize>) -> Result<(H, T)>
+pub fn read_resp<R, T>(rdr: &mut R, version: Option<usize>) -> Result<(HeaderResponse, T)>
 where
     R: io::Read,
-    H: de::DeserializeOwned,
     T: de::DeserializeOwned,
 {
     let mut buf = [0u8; 4];
@@ -507,17 +510,16 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_resp::<H, T>(&bytes, version)
+    decode_resp::<T>(&bytes, version)
 }
 
-pub fn decode_resp<'a, H, T>(input: &'a [u8], version: Option<usize>) -> Result<(H, T)>
+pub fn decode_resp<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<(HeaderResponse, T)>
 where
-    H: Deserialize<'a>,
     T: Deserialize<'a>,
 {
     let mut deserializer = Deserializer::from_bytes(input, version);
 
-    let header = H::deserialize(&mut deserializer)?;
+    let header = HeaderResponse::deserialize(&mut deserializer)?;
     let resp = T::deserialize(&mut deserializer)?;
 
     if deserializer.input.len() == 0 {
@@ -1432,7 +1434,7 @@ mod tests {
             correlation_id: 42,
             client_id: NullableString(None),
         };
-        let bytes = encode_req(&header).unwrap();
+        let bytes = encode_req::<HeaderRequest>(&header, None).unwrap();
         assert_eq!(vec![0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255], bytes);
     }
 
@@ -1451,8 +1453,7 @@ mod tests {
             39, 0, 0, 0, 1, 0, 40, 0, 0, 0, 1, 0, 41, 0, 0, 0, 1, 0, 42, 0, 0, 0, 1,
         ]);
 
-        let (header, resp) =
-            read_resp::<_, HeaderResponse, ApiVersionsResponse>(&mut bytes, Some(0)).unwrap();
+        let (header, resp) = read_resp::<_, ApiVersionsResponse>(&mut bytes, Some(0)).unwrap();
         println!("{:?}", header);
         println!("{:?}", resp);
     }
