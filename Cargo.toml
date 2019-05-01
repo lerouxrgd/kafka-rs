@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
-    "spec-parser",
+    "kafka-client",
     "kafka-protocol",
+    "spec-parser",
 ]
