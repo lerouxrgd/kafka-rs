@@ -62,19 +62,11 @@ pub struct Serializer {
     buf: Vec<u8>,
 }
 
-pub fn encode_req<T: Serialize>(header: &HeaderRequest, val: Option<&T>) -> Result<Vec<u8>> {
+pub fn encode_req<T: Serialize>(header: &HeaderRequest, val: &T) -> Result<Vec<u8>> {
     let mut serializer = Serializer::new();
     header.serialize(&mut serializer)?;
-    if let Some(val) = val {
-        val.serialize(&mut serializer)?;
-    }
-    Ok(serializer.bytes())
-}
-
-pub fn encode_single<T: Serialize>(val: &T) -> Result<Vec<u8>> {
-    let mut serializer = Serializer::new();
     val.serialize(&mut serializer)?;
-    Ok(serializer.buf[4..].to_vec())
+    Ok(serializer.bytes())
 }
 
 impl Serializer {
@@ -500,7 +492,7 @@ fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
     }
 }
 
-pub fn read_resp<R, T>(rdr: &mut R, version: Option<usize>) -> Result<(HeaderResponse, T)>
+pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
 where
     R: io::Read,
     T: de::DeserializeOwned,
@@ -513,7 +505,7 @@ where
     decode_resp::<T>(&bytes, version)
 }
 
-pub fn decode_resp<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<(HeaderResponse, T)>
+pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
 where
     T: Deserialize<'a>,
 {
@@ -532,44 +524,14 @@ where
     }
 }
 
-pub fn read_single<R, T>(rdr: &mut R, version: Option<usize>) -> Result<T>
-where
-    R: io::Read,
-    T: de::DeserializeOwned,
-{
-    let mut buf = [0u8; 4];
-    rdr.read_exact(&mut buf)?;
-    let size = i32::from_be_bytes(buf);
-    let mut bytes = vec![0; size as usize];
-    rdr.read_exact(&mut bytes)?;
-    decode_single::<T>(&bytes, version)
-}
-
-pub fn decode_single<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<T>
-where
-    T: Deserialize<'a>,
-{
-    let mut deserializer = Deserializer::from_bytes(input, version);
-    let resp = T::deserialize(&mut deserializer)?;
-
-    if deserializer.input.len() == 0 {
-        Ok(resp)
-    } else {
-        Err(de::Error::custom(format!(
-            "{} bytes remaining",
-            deserializer.input.len()
-        )))
-    }
-}
-
 pub struct Deserializer<'de> {
     input: &'de [u8],
     identifiers: Vec<&'de str>,
-    version: Option<usize>,
+    version: usize,
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn from_bytes(input: &'de [u8], version: Option<usize>) -> Self {
+    pub fn from_bytes(input: &'de [u8], version: usize) -> Self {
         Deserializer {
             input,
             identifiers: vec![],
@@ -857,15 +819,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let variant = match self.version {
-            Some(i) => variants.get(i).ok_or_else::<Error, _>(|| {
-                de::Error::custom(format!("no variant {} within {:?}", i, variants))
-            }),
-            _ => Err(de::Error::custom(format!(
-                "invalid variant version: {:?}",
-                self.version
-            ))),
-        }?;
+        let variant = variants.get(self.version).ok_or_else::<Error, _>(|| {
+            de::Error::custom(format!("no variant {} within {:?}", self.version, variants))
+        })?;
         let value = visitor.visit_enum(Enum::new(self, variant))?;
         Ok(value)
     }
@@ -1333,6 +1289,29 @@ mod tests {
     use crate::types::*;
     use std::io::Cursor;
 
+    fn encode_single<T: Serialize>(val: &T) -> Result<Vec<u8>> {
+        let mut serializer = Serializer::new();
+        val.serialize(&mut serializer)?;
+        Ok(serializer.buf[4..].to_vec())
+    }
+
+    fn decode_single<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<T>
+    where
+        T: Deserialize<'a>,
+    {
+        let mut deserializer = Deserializer::from_bytes(input, version.unwrap_or_else(|| 0));
+        let resp = T::deserialize(&mut deserializer)?;
+
+        if deserializer.input.len() == 0 {
+            Ok(resp)
+        } else {
+            Err(de::Error::custom(format!(
+                "{} bytes remaining",
+                deserializer.input.len()
+            )))
+        }
+    }
+
     #[test]
     fn serde_bool() {
         let v1 = true;
@@ -1434,7 +1413,7 @@ mod tests {
             correlation_id: 42,
             client_id: NullableString(None),
         };
-        let bytes = encode_req::<HeaderRequest>(&header, None).unwrap();
+        let bytes = encode_req(&header, &ApiVersionsRequest::V0 {}).unwrap();
         assert_eq!(vec![0, 0, 0, 10, 0, 18, 0, 0, 0, 0, 0, 42, 255, 255], bytes);
     }
 
@@ -1453,8 +1432,44 @@ mod tests {
             39, 0, 0, 0, 1, 0, 40, 0, 0, 0, 1, 0, 41, 0, 0, 0, 1, 0, 42, 0, 0, 0, 1,
         ]);
 
-        let (header, resp) = read_resp::<_, ApiVersionsResponse>(&mut bytes, Some(0)).unwrap();
-        println!("{:?}", header);
-        println!("{:?}", resp);
+        let (header, resp) = read_resp::<_, ApiVersionsResponse>(&mut bytes, 0).unwrap();
+        assert_eq!(42, header.correlation);
+        assert!(if let ApiVersionsResponse::V0 {
+            error_code,
+            ref api_versions,
+        } = resp
+        {
+            error_code == 0 && api_versions.len() == 43
+        } else {
+            false
+        });
     }
+
+    #[test]
+    fn serede_req_resp() {
+        use crate::model::{create_topics_request::v0::*, CreateTopicsRequest};
+        use crate::types::NullableString;
+
+        let val1 = CreateTopicsRequest::V0 {
+            create_topic_requests: vec![CreateTopicRequests {
+                topic: "topic".to_owned(),
+                num_partitions: 32,
+                replication_factor: 16,
+                replica_assignment: vec![ReplicaAssignment {
+                    partition: 12,
+                    replicas: vec![1],
+                }],
+                config_entries: vec![ConfigEntries {
+                    config_name: "default".to_owned(),
+                    config_value: NullableString(None),
+                }],
+            }],
+            timeout: 0,
+        };
+
+        let bytes = encode_single(&val1).unwrap();
+        let val2 = decode_single::<CreateTopicsRequest>(&bytes, Some(0)).unwrap();
+        assert_eq!(val1, val2);
+    }
+
 }
