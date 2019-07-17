@@ -62,7 +62,7 @@ impl Deref for NullableBytes {
     }
 }
 
-#[derive(Debug, serde::Serialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct RecordBatch {
     pub base_offset: i64,
     pub batch_length: i32,
@@ -79,7 +79,7 @@ pub struct RecordBatch {
     pub records: Records,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 pub enum Compression {
     NoCompression,
     Gzip,
@@ -89,7 +89,7 @@ pub enum Compression {
     Unknown,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 pub enum TimestampType {
     CreateTime,
     LogAppendTime,
@@ -129,19 +129,19 @@ impl RecordBatch {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 pub enum Records {
     Control(Vec<ControlRecord>),
     Batch(Vec<Record>),
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 pub struct ControlRecord {
     pub version: i16,
     pub r#type: i16,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 pub struct Record {
     pub length: Varint,
     pub attributes: i8,
@@ -154,7 +154,7 @@ pub struct Record {
     pub headers: Vec<HeaderRecord>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 pub struct HeaderRecord {
     pub key_length: Varint,
     pub key: String,
