@@ -21,7 +21,7 @@ pub mod motif {
 }
 
 const HEADERS: &str = r#"
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct HeaderRequest {
     pub api_key: ApiKey,
     pub api_version: i16,

@@ -4,7 +4,7 @@ Generates `model.rs` for `kafka-protocol` by parsing `Kafka` [protocol specifica
 
 ## Usage
 
-To generate `../kafka-protocol/src/model.rs` based on the latest specs:
+To generate `../kafka-protocol/src/model.rs`:
 
 ``` shell
 cargo run

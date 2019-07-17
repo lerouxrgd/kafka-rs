@@ -1,4 +1,4 @@
-//! Generated from: https://kafka.apache.org/22/protocol.html
+//! Generated from: https://kafka.apache.org/23/protocol.html
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct HeaderRequest {
@@ -236,6 +236,10 @@ pub enum ErrorCode {
     /// Consumer group The consumer group has reached its max size. already
     /// has the configured maximum number of members. Retriable: No.
     GroupMaxSizeReached = 81,
+    /// The broker rejected this static consumer since another consumer with
+    /// the same group.instance.id has registered with a different member.id.
+    /// Retriable: No.
+    FencedInstanceId = 82,
 }
 
 ///  Numeric codes used to specify request types.
@@ -288,6 +292,7 @@ pub enum ApiKey {
     DescribeDelegationToken = 41,
     DeleteGroups = 42,
     ElectPreferredLeaders = 43,
+    IncrementalAlterConfigs = 44,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -997,6 +1002,38 @@ pub enum FetchRequest {
         /// Topics to remove from the fetch session.
         forgotten_topics_data: Vec<fetch_request::v10::ForgottenTopicsData>,
     },
+    V11 {
+        /// Broker id of the follower. For normal consumers, use -1.
+        replica_id: i32,
+        /// Maximum time in ms to wait for the response.
+        max_wait_time: i32,
+        /// Minimum bytes to accumulate in the response.
+        min_bytes: i32,
+        /// Maximum bytes to accumulate in the response. Note that this is not an
+        /// absolute maximum, if the first message in the first non-empty
+        /// partition of the fetch is larger than this value, the message will
+        /// still be returned to ensure that progress can be made.
+        max_bytes: i32,
+        /// This setting controls the visibility of transactional records. Using
+        /// READ_UNCOMMITTED (isolation_level = 0) makes all records visible. With
+        /// READ_COMMITTED (isolation_level = 1), non-transactional and COMMITTED
+        /// transactional records are visible. To be more concrete, READ_COMMITTED
+        /// returns all data from offsets smaller than the current LSO (last
+        /// stable offset), and enables the inclusion of the list of aborted
+        /// transactions in the result, which allows consumers to discard ABORTED
+        /// transactional records
+        isolation_level: i8,
+        /// The fetch session ID
+        session_id: i32,
+        /// The fetch session epoch
+        session_epoch: i32,
+        /// Topics to fetch in the order provided.
+        topics: Vec<fetch_request::v11::Topics>,
+        /// Topics to remove from the fetch session.
+        forgotten_topics_data: Vec<fetch_request::v11::ForgottenTopicsData>,
+        /// The consumer's rack id
+        rack_id: String,
+    },
 }
 
 pub mod fetch_request {
@@ -1258,6 +1295,41 @@ pub mod fetch_request {
             pub partition_max_bytes: i32,
         }
     }
+    pub mod v11 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// Name of topic
+            pub topic: String,
+            /// Partitions to remove from the fetch session.
+            pub partitions: Vec<Partitions>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct ForgottenTopicsData {
+            /// Name of topic
+            pub topic: String,
+            /// Partitions to remove from the fetch session.
+            pub partitions: Vec<i32>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Partitions {
+            /// Topic partition id
+            pub partition: i32,
+            /// The current leader epoch, if provided, is used to fence consumers/
+            /// replicas with old metadata. If the epoch provided by the client is
+            /// larger than the current epoch known to the broker, then the
+            /// UNKNOWN_LEADER_EPOCH error code will be returned. If the provided
+            /// epoch is smaller, then the FENCED_LEADER_EPOCH error code will be
+            /// returned.
+            pub current_leader_epoch: i32,
+            /// Message offset.
+            pub fetch_offset: i64,
+            /// Earliest available offset of the follower replica. The field is only
+            /// used when request is sent by follower.
+            pub log_start_offset: i64,
+            /// Maximum bytes to fetch.
+            pub partition_max_bytes: i32,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1351,6 +1423,17 @@ pub enum FetchResponse {
         session_id: i32,
         /// null
         responses: Vec<fetch_response::v10::Responses>,
+    },
+    V11 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// Response error code
+        error_code: i16,
+        /// The fetch session ID
+        session_id: i32,
+        /// null
+        responses: Vec<fetch_response::v11::Responses>,
     },
 }
 
@@ -1733,6 +1816,48 @@ pub mod fetch_response {
             pub first_offset: i64,
         }
     }
+    pub mod v11 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Responses {
+            /// Name of topic
+            pub topic: String,
+            /// null
+            pub partition_responses: Vec<PartitionResponses>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionResponses {
+            /// null
+            pub partition_header: PartitionHeader,
+            /// null
+            pub record_set: crate::types::Records,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionHeader {
+            /// Topic partition id
+            pub partition: i32,
+            /// Response error code
+            pub error_code: i16,
+            /// Last committed offset.
+            pub high_watermark: i64,
+            /// The last stable offset (or LSO) of the partition. This is the last
+            /// offset such that the state of all transactional records prior to this
+            /// offset have been decided (ABORTED or COMMITTED)
+            pub last_stable_offset: i64,
+            /// Earliest available offset.
+            pub log_start_offset: i64,
+            /// null
+            pub aborted_transactions: Vec<AbortedTransactions>,
+            /// The ID of the replica that the consumer should prefer.
+            pub preferred_read_replica: i32,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct AbortedTransactions {
+            /// The producer id associated with the aborted transactions
+            pub producer_id: i64,
+            /// The first offset in the aborted transaction
+            pub first_offset: i64,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2094,153 +2219,233 @@ pub mod list_offsets_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MetadataRequest {
     V0 {
-        /// An array of topics to fetch metadata for. If no topics are specified
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v0::Topics>,
     },
     V1 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v1::Topics>,
     },
     V2 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v2::Topics>,
     },
     V3 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v3::Topics>,
     },
     V4 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
-        /// If this and the broker config <code>auto.create.topics.enable</code>
-        /// are true, topics that don't exist will be created by the broker.
-        /// Otherwise, no topics will be created by the broker.
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v4::Topics>,
+        /// If this is true, the broker may auto-create topics that we requested
+        /// which do not already exist, if it is configured to do so.
         allow_auto_topic_creation: bool,
     },
     V5 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
-        /// If this and the broker config <code>auto.create.topics.enable</code>
-        /// are true, topics that don't exist will be created by the broker.
-        /// Otherwise, no topics will be created by the broker.
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v5::Topics>,
+        /// If this is true, the broker may auto-create topics that we requested
+        /// which do not already exist, if it is configured to do so.
         allow_auto_topic_creation: bool,
     },
     V6 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
-        /// If this and the broker config <code>auto.create.topics.enable</code>
-        /// are true, topics that don't exist will be created by the broker.
-        /// Otherwise, no topics will be created by the broker.
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v6::Topics>,
+        /// If this is true, the broker may auto-create topics that we requested
+        /// which do not already exist, if it is configured to do so.
         allow_auto_topic_creation: bool,
     },
     V7 {
-        /// An array of topics to fetch metadata for. If the topics array is null
-        /// fetch metadata for all topics.
-        topics: Vec<String>,
-        /// If this and the broker config <code>auto.create.topics.enable</code>
-        /// are true, topics that don't exist will be created by the broker.
-        /// Otherwise, no topics will be created by the broker.
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v7::Topics>,
+        /// If this is true, the broker may auto-create topics that we requested
+        /// which do not already exist, if it is configured to do so.
         allow_auto_topic_creation: bool,
     },
+    V8 {
+        /// The topics to fetch metadata for.
+        topics: Vec<metadata_request::v8::Topics>,
+        /// If this is true, the broker may auto-create topics that we requested
+        /// which do not already exist, if it is configured to do so.
+        allow_auto_topic_creation: bool,
+        /// Whether to include cluster authorized operations.
+        include_cluster_authorized_operations: bool,
+        /// Whether to include topic authorized operations.
+        include_topic_authorized_operations: bool,
+    },
+}
+
+pub mod metadata_request {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v1 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v2 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v4 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v5 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v6 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v7 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
+    pub mod v8 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MetadataResponse {
     V0 {
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v0::Brokers>,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v0::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v0::Topics>,
     },
     V1 {
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v1::Brokers>,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v1::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v1::Topics>,
     },
     V2 {
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v2::Brokers>,
-        /// The cluster id that this broker belongs to.
+        /// The cluster ID that responding broker belongs to.
         cluster_id: crate::types::NullableString,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v2::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v2::Topics>,
     },
     V3 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v3::Brokers>,
-        /// The cluster id that this broker belongs to.
+        /// The cluster ID that responding broker belongs to.
         cluster_id: crate::types::NullableString,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v3::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v3::Topics>,
     },
     V4 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v4::Brokers>,
-        /// The cluster id that this broker belongs to.
+        /// The cluster ID that responding broker belongs to.
         cluster_id: crate::types::NullableString,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v4::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v4::Topics>,
     },
     V5 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v5::Brokers>,
-        /// The cluster id that this broker belongs to.
+        /// The cluster ID that responding broker belongs to.
         cluster_id: crate::types::NullableString,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v5::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v5::Topics>,
     },
     V6 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v6::Brokers>,
-        /// The cluster id that this broker belongs to.
+        /// The cluster ID that responding broker belongs to.
         cluster_id: crate::types::NullableString,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v6::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v6::Topics>,
     },
     V7 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Host and port information for all brokers.
+        /// Each broker in the response.
         brokers: Vec<metadata_response::v7::Brokers>,
-        /// The cluster id that this broker belongs to.
+        /// The cluster ID that responding broker belongs to.
         cluster_id: crate::types::NullableString,
-        /// The broker id of the controller broker.
+        /// The ID of the controller broker.
         controller_id: i32,
-        /// Metadata for requested topics
-        topic_metadata: Vec<metadata_response::v7::TopicMetadata>,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v7::Topics>,
+    },
+    V8 {
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// Each broker in the response.
+        brokers: Vec<metadata_response::v8::Brokers>,
+        /// The cluster ID that responding broker belongs to.
+        cluster_id: crate::types::NullableString,
+        /// The ID of the controller broker.
+        controller_id: i32,
+        /// Each topic in the response.
+        topics: Vec<metadata_response::v8::Topics>,
+        /// 32-bit bitfield to represent authorized operations for this cluster.
+        cluster_authorized_operations: i32,
     },
 }
 
@@ -2248,219 +2453,219 @@ pub mod metadata_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// The topic name.
+            pub name: String,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
         }
     }
     pub mod v4 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
         }
     }
     pub mod v5 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
             /// The set of offline replicas of this partition.
             pub offline_replicas: Vec<i32>,
         }
@@ -2468,38 +2673,38 @@ pub mod metadata_response {
     pub mod v6 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
             /// The set of offline replicas of this partition.
             pub offline_replicas: Vec<i32>,
         }
@@ -2507,40 +2712,83 @@ pub mod metadata_response {
     pub mod v7 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Brokers {
-            /// The broker id.
+            /// The broker ID.
             pub node_id: i32,
-            /// The hostname of the broker.
+            /// The broker hostname.
             pub host: String,
-            /// The port on which the broker accepts requests.
+            /// The broker port.
             pub port: i32,
-            /// The rack of the broker.
+            /// The rack of the broker, or null if it has not been assigned to a rack.
             pub rack: crate::types::NullableString,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicMetadata {
-            /// Response error code
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Name of topic
-            pub topic: String,
-            /// Indicates if the topic is considered a Kafka internal topic
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
             pub is_internal: bool,
-            /// Metadata for each partition of the topic.
-            pub partition_metadata: Vec<PartitionMetadata>,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionMetadata {
-            /// Response error code
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
             pub error_code: i16,
-            /// Topic partition id
-            pub partition: i32,
-            /// The id of the broker acting as leader for this partition.
-            pub leader: i32,
-            /// The leader epoch
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
+            /// The leader epoch of this partition.
             pub leader_epoch: i32,
             /// The set of all nodes that host this partition.
-            pub replicas: Vec<i32>,
+            pub replica_nodes: Vec<i32>,
             /// The set of nodes that are in sync with the leader for this partition.
-            pub isr: Vec<i32>,
+            pub isr_nodes: Vec<i32>,
+            /// The set of offline replicas of this partition.
+            pub offline_replicas: Vec<i32>,
+        }
+    }
+    pub mod v8 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Brokers {
+            /// The broker ID.
+            pub node_id: i32,
+            /// The broker hostname.
+            pub host: String,
+            /// The broker port.
+            pub port: i32,
+            /// The rack of the broker, or null if it has not been assigned to a rack.
+            pub rack: crate::types::NullableString,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The partition error, or 0 if there was no error.
+            pub error_code: i16,
+            /// The topic name.
+            pub name: String,
+            /// True if the topic is internal.
+            pub is_internal: bool,
+            /// Each partition in the topic.
+            pub partitions: Vec<Partitions>,
+            /// 32-bit bitfield to represent authorized operations for this topic.
+            pub topic_authorized_operations: i32,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Partitions {
+            /// The partition error, or 0 if there was no error.
+            pub error_code: i16,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The ID of the leader broker.
+            pub leader_id: i32,
+            /// The leader epoch of this partition.
+            pub leader_epoch: i32,
+            /// The set of all nodes that host this partition.
+            pub replica_nodes: Vec<i32>,
+            /// The set of nodes that are in sync with the leader for this partition.
+            pub isr_nodes: Vec<i32>,
             /// The set of offline replicas of this partition.
             pub offline_replicas: Vec<i32>,
         }
@@ -3179,7 +3427,7 @@ pub enum ControlledShutdownRequest {
     V2 {
         /// The id of the broker for which controlled shutdown has been requested.
         broker_id: i32,
-        /// The broker epoch
+        /// The broker epoch.
         broker_epoch: i64,
     },
 }
@@ -3187,51 +3435,51 @@ pub enum ControlledShutdownRequest {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ControlledShutdownResponse {
     V0 {
-        /// Response error code
+        /// The top-level error code.
         error_code: i16,
         /// The partitions that the broker still leads.
-        partitions_remaining: Vec<controlled_shutdown_response::v0::PartitionsRemaining>,
+        remaining_partitions: Vec<controlled_shutdown_response::v0::RemainingPartitions>,
     },
     V1 {
-        /// Response error code
+        /// The top-level error code.
         error_code: i16,
         /// The partitions that the broker still leads.
-        partitions_remaining: Vec<controlled_shutdown_response::v1::PartitionsRemaining>,
+        remaining_partitions: Vec<controlled_shutdown_response::v1::RemainingPartitions>,
     },
     V2 {
-        /// Response error code
+        /// The top-level error code.
         error_code: i16,
         /// The partitions that the broker still leads.
-        partitions_remaining: Vec<controlled_shutdown_response::v2::PartitionsRemaining>,
+        remaining_partitions: Vec<controlled_shutdown_response::v2::RemainingPartitions>,
     },
 }
 
 pub mod controlled_shutdown_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionsRemaining {
-            /// Name of topic
-            pub topic: String,
-            /// Topic partition id
-            pub partition: i32,
+        pub struct RemainingPartitions {
+            /// The name of the topic.
+            pub topic_name: String,
+            /// The index of the partition.
+            pub partition_index: i32,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionsRemaining {
-            /// Name of topic
-            pub topic: String,
-            /// Topic partition id
-            pub partition: i32,
+        pub struct RemainingPartitions {
+            /// The name of the topic.
+            pub topic_name: String,
+            /// The index of the partition.
+            pub partition_index: i32,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionsRemaining {
-            /// Name of topic
-            pub topic: String,
-            /// Topic partition id
-            pub partition: i32,
+        pub struct RemainingPartitions {
+            /// The name of the topic.
+            pub topic_name: String,
+            /// The index of the partition.
+            pub partition_index: i32,
         }
     }
 }
@@ -3239,82 +3487,88 @@ pub mod controlled_shutdown_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum OffsetCommitRequest {
     V0 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
-        /// Topics to commit offsets
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v0::Topics>,
     },
     V1 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID assigned by the group coordinator.
         member_id: String,
-        /// Topics to commit offsets
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v1::Topics>,
     },
     V2 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID assigned by the group coordinator.
         member_id: String,
-        /// Time period in ms to retain the offset.
-        retention_time: i64,
-        /// Topics to commit offsets
+        /// The time period in ms to retain the offset.
+        retention_time_ms: i64,
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v2::Topics>,
     },
     V3 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID assigned by the group coordinator.
         member_id: String,
-        /// Time period in ms to retain the offset.
-        retention_time: i64,
-        /// Topics to commit offsets
+        /// The time period in ms to retain the offset.
+        retention_time_ms: i64,
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v3::Topics>,
     },
     V4 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID assigned by the group coordinator.
         member_id: String,
-        /// Time period in ms to retain the offset.
-        retention_time: i64,
-        /// Topics to commit offsets
+        /// The time period in ms to retain the offset.
+        retention_time_ms: i64,
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v4::Topics>,
     },
     V5 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID assigned by the group coordinator.
         member_id: String,
-        /// Topics to commit offsets
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v5::Topics>,
     },
     V6 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID assigned by the group coordinator.
         member_id: String,
-        /// Topics to commit offsets
+        /// The topics to commit offsets for.
         topics: Vec<offset_commit_request::v6::Topics>,
+    },
+    V7 {
+        /// The unique group identifier.
+        group_id: String,
+        /// The generation of the group.
+        generation_id: i32,
+        /// The member ID assigned by the group coordinator.
+        member_id: String,
+        /// The unique identifier of the consumer instance provided by end user.
+        group_instance_id: crate::types::NullableString,
+        /// The topics to commit offsets for.
+        topics: Vec<offset_commit_request::v7::Topics>,
     },
 }
 
@@ -3322,133 +3576,151 @@ pub mod offset_commit_request {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
-            /// Timestamp of the commit
-            pub timestamp: i64,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
+            /// The timestamp of the commit.
+            pub commit_timestamp: i64,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
         }
     }
     pub mod v4 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
         }
     }
     pub mod v5 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
         }
     }
     pub mod v6 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
-            /// Name of topic
-            pub topic: String,
-            /// Partitions to commit offsets
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
             pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Partitions {
-            /// Topic partition id
-            pub partition: i32,
-            /// Message offset to be committed
-            pub offset: i64,
-            /// The leader epoch, if provided is derived from the last consumed record.
-            /// This is used by the consumer to check for log truncation and to ensure
-            /// partition metadata is up to date following a group rebalance.
-            pub leader_epoch: i32,
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
+            /// The leader epoch of this partition.
+            pub committed_leader_epoch: i32,
             /// Any associated metadata the client wants to keep.
-            pub metadata: crate::types::NullableString,
+            pub committed_metadata: crate::types::NullableString,
+        }
+    }
+    pub mod v7 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// Each partition to commit offsets for.
+            pub partitions: Vec<Partitions>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The message offset to be committed.
+            pub committed_offset: i64,
+            /// The leader epoch of this partition.
+            pub committed_leader_epoch: i32,
+            /// Any associated metadata the client wants to keep.
+            pub committed_metadata: crate::types::NullableString,
         }
     }
 }
@@ -3456,157 +3728,180 @@ pub mod offset_commit_request {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum OffsetCommitResponse {
     V0 {
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v0::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v0::Topics>,
     },
     V1 {
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v1::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v1::Topics>,
     },
     V2 {
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v2::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v2::Topics>,
     },
     V3 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v3::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v3::Topics>,
     },
     V4 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v4::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v4::Topics>,
     },
     V5 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v5::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v5::Topics>,
     },
     V6 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Responses by topic for committed partitions
-        responses: Vec<offset_commit_response::v6::Responses>,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v6::Topics>,
+    },
+    V7 {
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// The responses for each topic.
+        topics: Vec<offset_commit_response::v7::Topics>,
     },
 }
 
 pub mod offset_commit_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v4 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v5 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v6 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Responses {
-            /// Name of topic
-            pub topic: String,
-            /// Responses for committed partitions
-            pub partition_responses: Vec<PartitionResponses>,
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct PartitionResponses {
-            /// Topic partition id
-            pub partition: i32,
-            /// Response error code
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
+            pub error_code: i16,
+        }
+    }
+    pub mod v7 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The responses for each partition in the topic.
+            pub partitions: Vec<Partitions>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Partitions {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
@@ -3918,223 +4213,225 @@ pub mod offset_fetch_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FindCoordinatorRequest {
     V0 {
-        /// The unique group identifier
-        group_id: String,
+        /// The coordinator key.
+        key: String,
     },
     V1 {
-        /// Id to use for finding the coordinator (for groups, this is the groupId,
-        /// for transactional producers, this is the transactional id)
-        coordinator_key: String,
-        /// The type of coordinator to find (0 = group, 1 = transaction)
-        coordinator_type: i8,
+        /// The coordinator key.
+        key: String,
+        /// The coordinator key type.  (Group, transaction, etc.
+        key_type: i8,
     },
     V2 {
-        /// Id to use for finding the coordinator (for groups, this is the groupId,
-        /// for transactional producers, this is the transactional id)
-        coordinator_key: String,
-        /// The type of coordinator to find (0 = group, 1 = transaction)
-        coordinator_type: i8,
+        /// The coordinator key.
+        key: String,
+        /// The coordinator key type.  (Group, transaction, etc.
+        key_type: i8,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FindCoordinatorResponse {
     V0 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Host and port information for the coordinator for a consumer group.
-        coordinator: find_coordinator_response::v0::Coordinator,
+        /// The node id.
+        node_id: i32,
+        /// The host name.
+        host: String,
+        /// The port.
+        port: i32,
     },
     V1 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Response error message
+        /// The error message, or null if there was no error.
         error_message: crate::types::NullableString,
-        /// Host and port information for the coordinator
-        coordinator: find_coordinator_response::v1::Coordinator,
+        /// The node id.
+        node_id: i32,
+        /// The host name.
+        host: String,
+        /// The port.
+        port: i32,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Response error message
+        /// The error message, or null if there was no error.
         error_message: crate::types::NullableString,
-        /// Host and port information for the coordinator
-        coordinator: find_coordinator_response::v2::Coordinator,
+        /// The node id.
+        node_id: i32,
+        /// The host name.
+        host: String,
+        /// The port.
+        port: i32,
     },
-}
-
-pub mod find_coordinator_response {
-    pub mod v0 {
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Coordinator {
-            /// The broker id.
-            pub node_id: i32,
-            /// The hostname of the broker.
-            pub host: String,
-            /// The port on which the broker accepts requests.
-            pub port: i32,
-        }
-    }
-    pub mod v1 {
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Coordinator {
-            /// The broker id.
-            pub node_id: i32,
-            /// The hostname of the broker.
-            pub host: String,
-            /// The port on which the broker accepts requests.
-            pub port: i32,
-        }
-    }
-    pub mod v2 {
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct Coordinator {
-            /// The broker id.
-            pub node_id: i32,
-            /// The hostname of the broker.
-            pub host: String,
-            /// The port on which the broker accepts requests.
-            pub port: i32,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum JoinGroupRequest {
     V0 {
-        /// The unique group identifier
+        /// The group identifier.
         group_id: String,
         /// The coordinator considers the consumer dead if it receives no
-        /// heartbeat after this timeout in ms.
-        session_timeout: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// heartbeat after this timeout in milliseconds.
+        session_timeout_ms: i32,
+        /// The member id assigned by the group coordinator.
         member_id: String,
-        /// Unique name for class of protocols implemented by group
+        /// The unique name the for class of protocols implemented by the group we
+        /// want to join.
         protocol_type: String,
-        /// List of protocols that the member supports
-        group_protocols: Vec<join_group_request::v0::GroupProtocols>,
+        /// The list of protocols that the member supports.
+        protocols: Vec<join_group_request::v0::Protocols>,
     },
     V1 {
-        /// The unique group identifier
+        /// The group identifier.
         group_id: String,
         /// The coordinator considers the consumer dead if it receives no
-        /// heartbeat after this timeout in ms.
-        session_timeout: i32,
-        /// The maximum time that the coordinator will wait for each member to
-        /// rejoin when rebalancing the group
-        rebalance_timeout: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// heartbeat after this timeout in milliseconds.
+        session_timeout_ms: i32,
+        /// The maximum time in milliseconds that the coordinator will wait for
+        /// each member to rejoin when rebalancing the group.
+        rebalance_timeout_ms: i32,
+        /// The member id assigned by the group coordinator.
         member_id: String,
-        /// Unique name for class of protocols implemented by group
+        /// The unique name the for class of protocols implemented by the group we
+        /// want to join.
         protocol_type: String,
-        /// List of protocols that the member supports
-        group_protocols: Vec<join_group_request::v1::GroupProtocols>,
+        /// The list of protocols that the member supports.
+        protocols: Vec<join_group_request::v1::Protocols>,
     },
     V2 {
-        /// The unique group identifier
+        /// The group identifier.
         group_id: String,
         /// The coordinator considers the consumer dead if it receives no
-        /// heartbeat after this timeout in ms.
-        session_timeout: i32,
-        /// The maximum time that the coordinator will wait for each member to
-        /// rejoin when rebalancing the group
-        rebalance_timeout: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// heartbeat after this timeout in milliseconds.
+        session_timeout_ms: i32,
+        /// The maximum time in milliseconds that the coordinator will wait for
+        /// each member to rejoin when rebalancing the group.
+        rebalance_timeout_ms: i32,
+        /// The member id assigned by the group coordinator.
         member_id: String,
-        /// Unique name for class of protocols implemented by group
+        /// The unique name the for class of protocols implemented by the group we
+        /// want to join.
         protocol_type: String,
-        /// List of protocols that the member supports
-        group_protocols: Vec<join_group_request::v2::GroupProtocols>,
+        /// The list of protocols that the member supports.
+        protocols: Vec<join_group_request::v2::Protocols>,
     },
     V3 {
-        /// The unique group identifier
+        /// The group identifier.
         group_id: String,
         /// The coordinator considers the consumer dead if it receives no
-        /// heartbeat after this timeout in ms.
-        session_timeout: i32,
-        /// The maximum time that the coordinator will wait for each member to
-        /// rejoin when rebalancing the group
-        rebalance_timeout: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// heartbeat after this timeout in milliseconds.
+        session_timeout_ms: i32,
+        /// The maximum time in milliseconds that the coordinator will wait for
+        /// each member to rejoin when rebalancing the group.
+        rebalance_timeout_ms: i32,
+        /// The member id assigned by the group coordinator.
         member_id: String,
-        /// Unique name for class of protocols implemented by group
+        /// The unique name the for class of protocols implemented by the group we
+        /// want to join.
         protocol_type: String,
-        /// List of protocols that the member supports
-        group_protocols: Vec<join_group_request::v3::GroupProtocols>,
+        /// The list of protocols that the member supports.
+        protocols: Vec<join_group_request::v3::Protocols>,
     },
     V4 {
-        /// The unique group identifier
+        /// The group identifier.
         group_id: String,
         /// The coordinator considers the consumer dead if it receives no
-        /// heartbeat after this timeout in ms.
-        session_timeout: i32,
-        /// The maximum time that the coordinator will wait for each member to
-        /// rejoin when rebalancing the group
-        rebalance_timeout: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// heartbeat after this timeout in milliseconds.
+        session_timeout_ms: i32,
+        /// The maximum time in milliseconds that the coordinator will wait for
+        /// each member to rejoin when rebalancing the group.
+        rebalance_timeout_ms: i32,
+        /// The member id assigned by the group coordinator.
         member_id: String,
-        /// Unique name for class of protocols implemented by group
+        /// The unique name the for class of protocols implemented by the group we
+        /// want to join.
         protocol_type: String,
-        /// List of protocols that the member supports
-        group_protocols: Vec<join_group_request::v4::GroupProtocols>,
+        /// The list of protocols that the member supports.
+        protocols: Vec<join_group_request::v4::Protocols>,
+    },
+    V5 {
+        /// The group identifier.
+        group_id: String,
+        /// The coordinator considers the consumer dead if it receives no
+        /// heartbeat after this timeout in milliseconds.
+        session_timeout_ms: i32,
+        /// The maximum time in milliseconds that the coordinator will wait for
+        /// each member to rejoin when rebalancing the group.
+        rebalance_timeout_ms: i32,
+        /// The member id assigned by the group coordinator.
+        member_id: String,
+        /// The unique identifier of the consumer instance provided by end user.
+        group_instance_id: crate::types::NullableString,
+        /// The unique name the for class of protocols implemented by the group we
+        /// want to join.
+        protocol_type: String,
+        /// The list of protocols that the member supports.
+        protocols: Vec<join_group_request::v5::Protocols>,
     },
 }
 
 pub mod join_group_request {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupProtocols {
-            /// null
-            pub protocol_name: String,
-            /// null
-            pub protocol_metadata: crate::types::Bytes,
+        pub struct Protocols {
+            /// The protocol name.
+            pub name: String,
+            /// The protocol metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupProtocols {
-            /// null
-            pub protocol_name: String,
-            /// null
-            pub protocol_metadata: crate::types::Bytes,
+        pub struct Protocols {
+            /// The protocol name.
+            pub name: String,
+            /// The protocol metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupProtocols {
-            /// null
-            pub protocol_name: String,
-            /// null
-            pub protocol_metadata: crate::types::Bytes,
+        pub struct Protocols {
+            /// The protocol name.
+            pub name: String,
+            /// The protocol metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupProtocols {
-            /// null
-            pub protocol_name: String,
-            /// null
-            pub protocol_metadata: crate::types::Bytes,
+        pub struct Protocols {
+            /// The protocol name.
+            pub name: String,
+            /// The protocol metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v4 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupProtocols {
-            /// null
-            pub protocol_name: String,
-            /// null
-            pub protocol_metadata: crate::types::Bytes,
+        pub struct Protocols {
+            /// The protocol name.
+            pub name: String,
+            /// The protocol metadata.
+            pub metadata: crate::types::Bytes,
+        }
+    }
+    pub mod v5 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Protocols {
+            /// The protocol name.
+            pub name: String,
+            /// The protocol metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
 }
@@ -4142,88 +4439,100 @@ pub mod join_group_request {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum JoinGroupResponse {
     V0 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// The generation of the group.
+        /// The generation ID of the group.
         generation_id: i32,
-        /// The group protocol selected by the coordinator
-        group_protocol: String,
-        /// The leader of the group
-        leader_id: String,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The group protocol selected by the coordinator.
+        protocol_name: String,
+        /// The leader of the group.
+        leader: String,
+        /// The group member ID.
         member_id: String,
-        /// null
+
         members: Vec<join_group_response::v0::Members>,
     },
     V1 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// The generation of the group.
+        /// The generation ID of the group.
         generation_id: i32,
-        /// The group protocol selected by the coordinator
-        group_protocol: String,
-        /// The leader of the group
-        leader_id: String,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The group protocol selected by the coordinator.
+        protocol_name: String,
+        /// The leader of the group.
+        leader: String,
+        /// The group member ID.
         member_id: String,
-        /// null
+
         members: Vec<join_group_response::v1::Members>,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// The generation of the group.
+        /// The generation ID of the group.
         generation_id: i32,
-        /// The group protocol selected by the coordinator
-        group_protocol: String,
-        /// The leader of the group
-        leader_id: String,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The group protocol selected by the coordinator.
+        protocol_name: String,
+        /// The leader of the group.
+        leader: String,
+        /// The group member ID.
         member_id: String,
-        /// null
+
         members: Vec<join_group_response::v2::Members>,
     },
     V3 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// The generation of the group.
+        /// The generation ID of the group.
         generation_id: i32,
-        /// The group protocol selected by the coordinator
-        group_protocol: String,
-        /// The leader of the group
-        leader_id: String,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The group protocol selected by the coordinator.
+        protocol_name: String,
+        /// The leader of the group.
+        leader: String,
+        /// The group member ID.
         member_id: String,
-        /// null
+
         members: Vec<join_group_response::v3::Members>,
     },
     V4 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// The generation of the group.
+        /// The generation ID of the group.
         generation_id: i32,
-        /// The group protocol selected by the coordinator
-        group_protocol: String,
-        /// The leader of the group
-        leader_id: String,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The group protocol selected by the coordinator.
+        protocol_name: String,
+        /// The leader of the group.
+        leader: String,
+        /// The group member ID.
         member_id: String,
-        /// null
+
         members: Vec<join_group_response::v4::Members>,
+    },
+    V5 {
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// The error code, or 0 if there was no error.
+        error_code: i16,
+        /// The generation ID of the group.
+        generation_id: i32,
+        /// The group protocol selected by the coordinator.
+        protocol_name: String,
+        /// The leader of the group.
+        leader: String,
+        /// The group member ID.
+        member_id: String,
+
+        members: Vec<join_group_response::v5::Members>,
     },
 }
 
@@ -4231,51 +4540,57 @@ pub mod join_group_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The group member ID.
             pub member_id: String,
-            /// null
-            pub member_metadata: crate::types::Bytes,
+            /// The group member metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The group member ID.
             pub member_id: String,
-            /// null
-            pub member_metadata: crate::types::Bytes,
+            /// The group member metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The group member ID.
             pub member_id: String,
-            /// null
-            pub member_metadata: crate::types::Bytes,
+            /// The group member metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The group member ID.
             pub member_id: String,
-            /// null
-            pub member_metadata: crate::types::Bytes,
+            /// The group member metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
     pub mod v4 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The group member ID.
             pub member_id: String,
-            /// null
-            pub member_metadata: crate::types::Bytes,
+            /// The group member metadata.
+            pub metadata: crate::types::Bytes,
+        }
+    }
+    pub mod v5 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Members {
+            /// The group member ID.
+            pub member_id: String,
+            /// The unique identifier of the consumer instance provided by end user.
+            pub group_instance_id: crate::types::NullableString,
+            /// The group member metadata.
+            pub metadata: crate::types::Bytes,
         }
     }
 }
@@ -4283,52 +4598,66 @@ pub mod join_group_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HeartbeatRequest {
     V0 {
-        /// The unique group identifier
+        /// The group id.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID.
         member_id: String,
     },
     V1 {
-        /// The unique group identifier
+        /// The group id.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID.
         member_id: String,
     },
     V2 {
-        /// The unique group identifier
+        /// The group id.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The member ID.
         member_id: String,
+    },
+    V3 {
+        /// The group id.
+        group_id: String,
+        /// The generation of the group.
+        generation_id: i32,
+        /// The member ID.
+        member_id: String,
+        /// The unique identifier of the consumer instance provided by end user.
+        group_instance_id: crate::types::NullableString,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HeartbeatResponse {
     V0 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
     },
     V1 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
+        error_code: i16,
+    },
+    V3 {
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// The error code, or 0 if there was no error.
         error_code: i16,
     },
 }
@@ -4380,69 +4709,84 @@ pub enum LeaveGroupResponse {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SyncGroupRequest {
     V0 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The ID of the member to assign.
         member_id: String,
-        /// null
-        group_assignment: Vec<sync_group_request::v0::GroupAssignment>,
+        /// Each assignment.
+        assignments: Vec<sync_group_request::v0::Assignments>,
     },
     V1 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The ID of the member to assign.
         member_id: String,
-        /// null
-        group_assignment: Vec<sync_group_request::v1::GroupAssignment>,
+        /// Each assignment.
+        assignments: Vec<sync_group_request::v1::Assignments>,
     },
     V2 {
-        /// The unique group identifier
+        /// The unique group identifier.
         group_id: String,
         /// The generation of the group.
         generation_id: i32,
-        /// The member id assigned by the group coordinator or null if joining for
-        /// the first time.
+        /// The ID of the member to assign.
         member_id: String,
-        /// null
-        group_assignment: Vec<sync_group_request::v2::GroupAssignment>,
+        /// Each assignment.
+        assignments: Vec<sync_group_request::v2::Assignments>,
+    },
+    V3 {
+        /// The unique group identifier.
+        group_id: String,
+        /// The generation of the group.
+        generation_id: i32,
+        /// The ID of the member to assign.
+        member_id: String,
+        /// The unique identifier of the consumer instance provided by end user.
+        group_instance_id: crate::types::NullableString,
+        /// Each assignment.
+        assignments: Vec<sync_group_request::v3::Assignments>,
     },
 }
 
 pub mod sync_group_request {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupAssignment {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+        pub struct Assignments {
+            /// The ID of the member to assign.
             pub member_id: String,
-            /// null
-            pub member_assignment: crate::types::Bytes,
+            /// The member assignment.
+            pub assignment: crate::types::Bytes,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupAssignment {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+        pub struct Assignments {
+            /// The ID of the member to assign.
             pub member_id: String,
-            /// null
-            pub member_assignment: crate::types::Bytes,
+            /// The member assignment.
+            pub assignment: crate::types::Bytes,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct GroupAssignment {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+        pub struct Assignments {
+            /// The ID of the member to assign.
             pub member_id: String,
-            /// null
-            pub member_assignment: crate::types::Bytes,
+            /// The member assignment.
+            pub assignment: crate::types::Bytes,
+        }
+    }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Assignments {
+            /// The ID of the member to assign.
+            pub member_id: String,
+            /// The member assignment.
+            pub assignment: crate::types::Bytes,
         }
     }
 }
@@ -4450,69 +4794,88 @@ pub mod sync_group_request {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SyncGroupResponse {
     V0 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// null
-        member_assignment: crate::types::Bytes,
+        /// The member assignment.
+        assignment: crate::types::Bytes,
     },
     V1 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// null
-        member_assignment: crate::types::Bytes,
+        /// The member assignment.
+        assignment: crate::types::Bytes,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// null
-        member_assignment: crate::types::Bytes,
+        /// The member assignment.
+        assignment: crate::types::Bytes,
+    },
+    V3 {
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// The error code, or 0 if there was no error.
+        error_code: i16,
+        /// The member assignment.
+        assignment: crate::types::Bytes,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DescribeGroupsRequest {
     V0 {
-        /// List of groupIds to request metadata for (an empty groupId array will
-        /// return empty group metadata)
-        group_ids: Vec<String>,
+        /// The names of the groups to describe
+        groups: Vec<String>,
     },
     V1 {
-        /// List of groupIds to request metadata for (an empty groupId array will
-        /// return empty group metadata)
-        group_ids: Vec<String>,
+        /// The names of the groups to describe
+        groups: Vec<String>,
     },
     V2 {
-        /// List of groupIds to request metadata for (an empty groupId array will
-        /// return empty group metadata)
-        group_ids: Vec<String>,
+        /// The names of the groups to describe
+        groups: Vec<String>,
+    },
+    V3 {
+        /// The names of the groups to describe
+        groups: Vec<String>,
+        /// Whether to include authorized operations.
+        include_authorized_operations: bool,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DescribeGroupsResponse {
     V0 {
-        /// null
+        /// Each described group.
         groups: Vec<describe_groups_response::v0::Groups>,
     },
     V1 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// null
+        /// Each described group.
         groups: Vec<describe_groups_response::v1::Groups>,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// null
+        /// Each described group.
         groups: Vec<describe_groups_response::v2::Groups>,
+    },
+    V3 {
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// Each described group.
+        groups: Vec<describe_groups_response::v3::Groups>,
     },
 }
 
@@ -4520,111 +4883,122 @@ pub mod describe_groups_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Groups {
-            /// Response error code
+            /// The describe error, or 0 if there was no error.
             pub error_code: i16,
-            /// The unique group identifier
+            /// The group ID string.
             pub group_id: String,
-            /// The current state of the group (one of: Dead, Stable,
-            /// CompletingRebalance, PreparingRebalance, or empty if there is no
-            /// active group)
-            pub state: String,
-            /// The current group protocol type (will be empty if there is no active
-            /// group)
+            /// The group state string, or the empty string.
+            pub group_state: String,
+            /// The group protocol type, or the empty string.
             pub protocol_type: String,
-            /// The current group protocol (only provided if the group is Stable)
-            pub protocol: String,
-            /// Current group members (only provided if the group is not Dead)
+            /// The group protocol data, or the empty string.
+            pub protocol_data: String,
+            /// The group members.
             pub members: Vec<Members>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The member ID assigned by the group coordinator.
             pub member_id: String,
-            /// The client id used in the member's latest join group request
+            /// The client ID used in the member's latest join group request.
             pub client_id: String,
-            /// The client host used in the request session corresponding to the
-            /// member's join group.
+            /// The client host.
             pub client_host: String,
-            /// The metadata corresponding to the current group protocol in use (will
-            /// only be present if the group is stable)
+            /// The metadata corresponding to the current group protocol in use.
             pub member_metadata: crate::types::Bytes,
-            /// The current assignment provided by the group leader (will only be
-            /// present if the group is stable)
+            /// The current assignment provided by the group leader.
             pub member_assignment: crate::types::Bytes,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Groups {
-            /// Response error code
+            /// The describe error, or 0 if there was no error.
             pub error_code: i16,
-            /// The unique group identifier
+            /// The group ID string.
             pub group_id: String,
-            /// The current state of the group (one of: Dead, Stable,
-            /// CompletingRebalance, PreparingRebalance, or empty if there is no
-            /// active group)
-            pub state: String,
-            /// The current group protocol type (will be empty if there is no active
-            /// group)
+            /// The group state string, or the empty string.
+            pub group_state: String,
+            /// The group protocol type, or the empty string.
             pub protocol_type: String,
-            /// The current group protocol (only provided if the group is Stable)
-            pub protocol: String,
-            /// Current group members (only provided if the group is not Dead)
+            /// The group protocol data, or the empty string.
+            pub protocol_data: String,
+            /// The group members.
             pub members: Vec<Members>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The member ID assigned by the group coordinator.
             pub member_id: String,
-            /// The client id used in the member's latest join group request
+            /// The client ID used in the member's latest join group request.
             pub client_id: String,
-            /// The client host used in the request session corresponding to the
-            /// member's join group.
+            /// The client host.
             pub client_host: String,
-            /// The metadata corresponding to the current group protocol in use (will
-            /// only be present if the group is stable)
+            /// The metadata corresponding to the current group protocol in use.
             pub member_metadata: crate::types::Bytes,
-            /// The current assignment provided by the group leader (will only be
-            /// present if the group is stable)
+            /// The current assignment provided by the group leader.
             pub member_assignment: crate::types::Bytes,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Groups {
-            /// Response error code
+            /// The describe error, or 0 if there was no error.
             pub error_code: i16,
-            /// The unique group identifier
+            /// The group ID string.
             pub group_id: String,
-            /// The current state of the group (one of: Dead, Stable,
-            /// CompletingRebalance, PreparingRebalance, or empty if there is no
-            /// active group)
-            pub state: String,
-            /// The current group protocol type (will be empty if there is no active
-            /// group)
+            /// The group state string, or the empty string.
+            pub group_state: String,
+            /// The group protocol type, or the empty string.
             pub protocol_type: String,
-            /// The current group protocol (only provided if the group is Stable)
-            pub protocol: String,
-            /// Current group members (only provided if the group is not Dead)
+            /// The group protocol data, or the empty string.
+            pub protocol_data: String,
+            /// The group members.
             pub members: Vec<Members>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Members {
-            /// The member id assigned by the group coordinator or null if joining for
-            /// the first time.
+            /// The member ID assigned by the group coordinator.
             pub member_id: String,
-            /// The client id used in the member's latest join group request
+            /// The client ID used in the member's latest join group request.
             pub client_id: String,
-            /// The client host used in the request session corresponding to the
-            /// member's join group.
+            /// The client host.
             pub client_host: String,
-            /// The metadata corresponding to the current group protocol in use (will
-            /// only be present if the group is stable)
+            /// The metadata corresponding to the current group protocol in use.
             pub member_metadata: crate::types::Bytes,
-            /// The current assignment provided by the group leader (will only be
-            /// present if the group is stable)
+            /// The current assignment provided by the group leader.
+            pub member_assignment: crate::types::Bytes,
+        }
+    }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Groups {
+            /// The describe error, or 0 if there was no error.
+            pub error_code: i16,
+            /// The group ID string.
+            pub group_id: String,
+            /// The group state string, or the empty string.
+            pub group_state: String,
+            /// The group protocol type, or the empty string.
+            pub protocol_type: String,
+            /// The group protocol data, or the empty string.
+            pub protocol_data: String,
+            /// The group members.
+            pub members: Vec<Members>,
+            /// 32-bit bitfield to represent authorized operations for this group.
+            pub authorized_operations: i32,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Members {
+            /// The member ID assigned by the group coordinator.
+            pub member_id: String,
+            /// The client ID used in the member's latest join group request.
+            pub client_id: String,
+            /// The client host.
+            pub client_host: String,
+            /// The metadata corresponding to the current group protocol in use.
+            pub member_metadata: crate::types::Bytes,
+            /// The current assignment provided by the group leader.
             pub member_assignment: crate::types::Bytes,
         }
     }
@@ -4698,11 +5072,11 @@ pub mod list_groups_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SaslHandshakeRequest {
     V0 {
-        /// SASL Mechanism chosen by the client.
+        /// The SASL mechanism chosen by the client.
         mechanism: String,
     },
     V1 {
-        /// SASL Mechanism chosen by the client.
+        /// The SASL mechanism chosen by the client.
         mechanism: String,
     },
 }
@@ -4710,16 +5084,16 @@ pub enum SaslHandshakeRequest {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SaslHandshakeResponse {
     V0 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Array of mechanisms enabled in the server.
-        enabled_mechanisms: Vec<String>,
+        /// The mechanisms enabled in the server.
+        mechanisms: Vec<String>,
     },
     V1 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Array of mechanisms enabled in the server.
-        enabled_mechanisms: Vec<String>,
+        /// The mechanisms enabled in the server.
+        mechanisms: Vec<String>,
     },
 }
 
@@ -4797,48 +5171,36 @@ pub mod api_versions_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CreateTopicsRequest {
     V0 {
-        /// An array of single topic creation requests. Can not have multiple
-        /// entries for the same topic.
-        create_topic_requests: Vec<create_topics_request::v0::CreateTopicRequests>,
-        /// The time in ms to wait for a topic to be completely created on the
-        /// controller node. Values <= 0 will trigger topic creation and return
-        /// immediately
-        timeout: i32,
+        /// The topics to create.
+        topics: Vec<create_topics_request::v0::Topics>,
+        /// How long to wait in milliseconds before timing out the request.
+        timeout_ms: i32,
     },
     V1 {
-        /// An array of single topic creation requests. Can not have multiple
-        /// entries for the same topic.
-        create_topic_requests: Vec<create_topics_request::v1::CreateTopicRequests>,
-        /// The time in ms to wait for a topic to be completely created on the
-        /// controller node. Values <= 0 will trigger topic creation and return
-        /// immediately
-        timeout: i32,
-        /// If this is true, the request will be validated, but the topic won't be
-        /// created.
+        /// The topics to create.
+        topics: Vec<create_topics_request::v1::Topics>,
+        /// How long to wait in milliseconds before timing out the request.
+        timeout_ms: i32,
+        /// If true, check that the topics can be created as specified, but don't
+        /// create anything.
         validate_only: bool,
     },
     V2 {
-        /// An array of single topic creation requests. Can not have multiple
-        /// entries for the same topic.
-        create_topic_requests: Vec<create_topics_request::v2::CreateTopicRequests>,
-        /// The time in ms to wait for a topic to be completely created on the
-        /// controller node. Values <= 0 will trigger topic creation and return
-        /// immediately
-        timeout: i32,
-        /// If this is true, the request will be validated, but the topic won't be
-        /// created.
+        /// The topics to create.
+        topics: Vec<create_topics_request::v2::Topics>,
+        /// How long to wait in milliseconds before timing out the request.
+        timeout_ms: i32,
+        /// If true, check that the topics can be created as specified, but don't
+        /// create anything.
         validate_only: bool,
     },
     V3 {
-        /// An array of single topic creation requests. Can not have multiple
-        /// entries for the same topic.
-        create_topic_requests: Vec<create_topics_request::v3::CreateTopicRequests>,
-        /// The time in ms to wait for a topic to be completely created on the
-        /// controller node. Values <= 0 will trigger topic creation and return
-        /// immediately
-        timeout: i32,
-        /// If this is true, the request will be validated, but the topic won't be
-        /// created.
+        /// The topics to create.
+        topics: Vec<create_topics_request::v3::Topics>,
+        /// How long to wait in milliseconds before timing out the request.
+        timeout_ms: i32,
+        /// If true, check that the topics can be created as specified, but don't
+        /// create anything.
         validate_only: bool,
     },
 }
@@ -4846,126 +5208,130 @@ pub enum CreateTopicsRequest {
 pub mod create_topics_request {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct CreateTopicRequests {
-            /// Name of topic
-            pub topic: String,
-            /// Number of partitions to be created. -1 indicates unset.
+        pub struct Topics {
+            /// The configuration name.
+            pub name: String,
+            /// The number of partitions to create in the topic, or -1 if we are
+            /// specifying a manual partition assignment.
             pub num_partitions: i32,
-            /// Replication factor for the topic. -1 indicates unset.
+            /// The number of replicas to create for each partition in the topic, or -
+            /// 1 if we are specifying a manual partition assignment.
             pub replication_factor: i16,
-            /// Replica assignment among kafka brokers for this topic partitions. If
-            /// this is set num_partitions and replication_factor must be unset.
-            pub replica_assignment: Vec<ReplicaAssignment>,
-            /// Topic level configuration for topic to be set.
-            pub config_entries: Vec<ConfigEntries>,
+            /// The manual partition assignment, or the empty array if we are using
+            /// automatic assignment.
+            pub assignments: Vec<Assignments>,
+            /// The custom topic configurations to set.
+            pub configs: Vec<Configs>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ReplicaAssignment {
-            /// Topic partition id
-            pub partition: i32,
-            /// The set of all nodes that should host this partition. The first
-            /// replica in the list is the preferred leader.
-            pub replicas: Vec<i32>,
+        pub struct Assignments {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The brokers to place the partition on.
+            pub broker_ids: Vec<i32>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ConfigEntries {
-            /// Configuration name
-            pub config_name: String,
-            /// Configuration value
-            pub config_value: crate::types::NullableString,
+        pub struct Configs {
+            /// The configuration name.
+            pub name: String,
+            /// The configuration value.
+            pub value: crate::types::NullableString,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct CreateTopicRequests {
-            /// Name of topic
-            pub topic: String,
-            /// Number of partitions to be created. -1 indicates unset.
+        pub struct Topics {
+            /// The configuration name.
+            pub name: String,
+            /// The number of partitions to create in the topic, or -1 if we are
+            /// specifying a manual partition assignment.
             pub num_partitions: i32,
-            /// Replication factor for the topic. -1 indicates unset.
+            /// The number of replicas to create for each partition in the topic, or -
+            /// 1 if we are specifying a manual partition assignment.
             pub replication_factor: i16,
-            /// Replica assignment among kafka brokers for this topic partitions. If
-            /// this is set num_partitions and replication_factor must be unset.
-            pub replica_assignment: Vec<ReplicaAssignment>,
-            /// Topic level configuration for topic to be set.
-            pub config_entries: Vec<ConfigEntries>,
+            /// The manual partition assignment, or the empty array if we are using
+            /// automatic assignment.
+            pub assignments: Vec<Assignments>,
+            /// The custom topic configurations to set.
+            pub configs: Vec<Configs>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ReplicaAssignment {
-            /// Topic partition id
-            pub partition: i32,
-            /// The set of all nodes that should host this partition. The first
-            /// replica in the list is the preferred leader.
-            pub replicas: Vec<i32>,
+        pub struct Assignments {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The brokers to place the partition on.
+            pub broker_ids: Vec<i32>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ConfigEntries {
-            /// Configuration name
-            pub config_name: String,
-            /// Configuration value
-            pub config_value: crate::types::NullableString,
+        pub struct Configs {
+            /// The configuration name.
+            pub name: String,
+            /// The configuration value.
+            pub value: crate::types::NullableString,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct CreateTopicRequests {
-            /// Name of topic
-            pub topic: String,
-            /// Number of partitions to be created. -1 indicates unset.
+        pub struct Topics {
+            /// The configuration name.
+            pub name: String,
+            /// The number of partitions to create in the topic, or -1 if we are
+            /// specifying a manual partition assignment.
             pub num_partitions: i32,
-            /// Replication factor for the topic. -1 indicates unset.
+            /// The number of replicas to create for each partition in the topic, or -
+            /// 1 if we are specifying a manual partition assignment.
             pub replication_factor: i16,
-            /// Replica assignment among kafka brokers for this topic partitions. If
-            /// this is set num_partitions and replication_factor must be unset.
-            pub replica_assignment: Vec<ReplicaAssignment>,
-            /// Topic level configuration for topic to be set.
-            pub config_entries: Vec<ConfigEntries>,
+            /// The manual partition assignment, or the empty array if we are using
+            /// automatic assignment.
+            pub assignments: Vec<Assignments>,
+            /// The custom topic configurations to set.
+            pub configs: Vec<Configs>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ReplicaAssignment {
-            /// Topic partition id
-            pub partition: i32,
-            /// The set of all nodes that should host this partition. The first
-            /// replica in the list is the preferred leader.
-            pub replicas: Vec<i32>,
+        pub struct Assignments {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The brokers to place the partition on.
+            pub broker_ids: Vec<i32>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ConfigEntries {
-            /// Configuration name
-            pub config_name: String,
-            /// Configuration value
-            pub config_value: crate::types::NullableString,
+        pub struct Configs {
+            /// The configuration name.
+            pub name: String,
+            /// The configuration value.
+            pub value: crate::types::NullableString,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct CreateTopicRequests {
-            /// Name of topic
-            pub topic: String,
-            /// Number of partitions to be created. -1 indicates unset.
+        pub struct Topics {
+            /// The configuration name.
+            pub name: String,
+            /// The number of partitions to create in the topic, or -1 if we are
+            /// specifying a manual partition assignment.
             pub num_partitions: i32,
-            /// Replication factor for the topic. -1 indicates unset.
+            /// The number of replicas to create for each partition in the topic, or -
+            /// 1 if we are specifying a manual partition assignment.
             pub replication_factor: i16,
-            /// Replica assignment among kafka brokers for this topic partitions. If
-            /// this is set num_partitions and replication_factor must be unset.
-            pub replica_assignment: Vec<ReplicaAssignment>,
-            /// Topic level configuration for topic to be set.
-            pub config_entries: Vec<ConfigEntries>,
+            /// The manual partition assignment, or the empty array if we are using
+            /// automatic assignment.
+            pub assignments: Vec<Assignments>,
+            /// The custom topic configurations to set.
+            pub configs: Vec<Configs>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ReplicaAssignment {
-            /// Topic partition id
-            pub partition: i32,
-            /// The set of all nodes that should host this partition. The first
-            /// replica in the list is the preferred leader.
-            pub replicas: Vec<i32>,
+        pub struct Assignments {
+            /// The partition index.
+            pub partition_index: i32,
+            /// The brokers to place the partition on.
+            pub broker_ids: Vec<i32>,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct ConfigEntries {
-            /// Configuration name
-            pub config_name: String,
-            /// Configuration value
-            pub config_value: crate::types::NullableString,
+        pub struct Configs {
+            /// The configuration name.
+            pub name: String,
+            /// The configuration value.
+            pub value: crate::types::NullableString,
         }
     }
 }
@@ -4973,69 +5339,69 @@ pub mod create_topics_request {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum CreateTopicsResponse {
     V0 {
-        /// An array of per topic error codes.
-        topic_errors: Vec<create_topics_response::v0::TopicErrors>,
+        /// Results for each topic we tried to create.
+        topics: Vec<create_topics_response::v0::Topics>,
     },
     V1 {
-        /// An array of per topic errors.
-        topic_errors: Vec<create_topics_response::v1::TopicErrors>,
+        /// Results for each topic we tried to create.
+        topics: Vec<create_topics_response::v1::Topics>,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// An array of per topic errors.
-        topic_errors: Vec<create_topics_response::v2::TopicErrors>,
+        /// Results for each topic we tried to create.
+        topics: Vec<create_topics_response::v2::Topics>,
     },
     V3 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// An array of per topic errors.
-        topic_errors: Vec<create_topics_response::v3::TopicErrors>,
+        /// Results for each topic we tried to create.
+        topics: Vec<create_topics_response::v3::Topics>,
     },
 }
 
 pub mod create_topics_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrors {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrors {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
-            /// Response error message
+            /// The error message, or null if there was no error.
             pub error_message: crate::types::NullableString,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrors {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
-            /// Response error message
+            /// The error message, or null if there was no error.
             pub error_message: crate::types::NullableString,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrors {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Topics {
+            /// The topic name.
+            pub name: String,
+            /// The error code, or 0 if there was no error.
             pub error_code: i16,
-            /// Response error message
+            /// The error message, or null if there was no error.
             pub error_message: crate::types::NullableString,
         }
     }
@@ -5044,102 +5410,98 @@ pub mod create_topics_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DeleteTopicsRequest {
     V0 {
-        /// An array of topics to be deleted.
-        topics: Vec<String>,
-        /// The time in ms to wait for a topic to be completely deleted on the
-        /// controller node. Values <= 0 will trigger topic deletion and return
-        /// immediately
-        timeout: i32,
+        /// The names of the topics to delete
+        topic_names: Vec<String>,
+        /// The length of time in milliseconds to wait for the deletions to
+        /// complete.
+        timeout_ms: i32,
     },
     V1 {
-        /// An array of topics to be deleted.
-        topics: Vec<String>,
-        /// The time in ms to wait for a topic to be completely deleted on the
-        /// controller node. Values <= 0 will trigger topic deletion and return
-        /// immediately
-        timeout: i32,
+        /// The names of the topics to delete
+        topic_names: Vec<String>,
+        /// The length of time in milliseconds to wait for the deletions to
+        /// complete.
+        timeout_ms: i32,
     },
     V2 {
-        /// An array of topics to be deleted.
-        topics: Vec<String>,
-        /// The time in ms to wait for a topic to be completely deleted on the
-        /// controller node. Values <= 0 will trigger topic deletion and return
-        /// immediately
-        timeout: i32,
+        /// The names of the topics to delete
+        topic_names: Vec<String>,
+        /// The length of time in milliseconds to wait for the deletions to
+        /// complete.
+        timeout_ms: i32,
     },
     V3 {
-        /// An array of topics to be deleted.
-        topics: Vec<String>,
-        /// The time in ms to wait for a topic to be completely deleted on the
-        /// controller node. Values <= 0 will trigger topic deletion and return
-        /// immediately
-        timeout: i32,
+        /// The names of the topics to delete
+        topic_names: Vec<String>,
+        /// The length of time in milliseconds to wait for the deletions to
+        /// complete.
+        timeout_ms: i32,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DeleteTopicsResponse {
     V0 {
-        /// An array of per topic error codes.
-        topic_error_codes: Vec<delete_topics_response::v0::TopicErrorCodes>,
+        /// The results for each topic we tried to delete.
+        responses: Vec<delete_topics_response::v0::Responses>,
     },
     V1 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// An array of per topic error codes.
-        topic_error_codes: Vec<delete_topics_response::v1::TopicErrorCodes>,
+        /// The results for each topic we tried to delete.
+        responses: Vec<delete_topics_response::v1::Responses>,
     },
     V2 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// An array of per topic error codes.
-        topic_error_codes: Vec<delete_topics_response::v2::TopicErrorCodes>,
+        /// The results for each topic we tried to delete.
+        responses: Vec<delete_topics_response::v2::Responses>,
     },
     V3 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// An array of per topic error codes.
-        topic_error_codes: Vec<delete_topics_response::v3::TopicErrorCodes>,
+        /// The results for each topic we tried to delete.
+        responses: Vec<delete_topics_response::v3::Responses>,
     },
 }
 
 pub mod delete_topics_response {
     pub mod v0 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrorCodes {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Responses {
+            /// The topic name
+            pub name: String,
+            /// The deletion error, or 0 if the deletion succeeded.
             pub error_code: i16,
         }
     }
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrorCodes {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Responses {
+            /// The topic name
+            pub name: String,
+            /// The deletion error, or 0 if the deletion succeeded.
             pub error_code: i16,
         }
     }
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrorCodes {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Responses {
+            /// The topic name
+            pub name: String,
+            /// The deletion error, or 0 if the deletion succeeded.
             pub error_code: i16,
         }
     }
     pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        pub struct TopicErrorCodes {
-            /// Name of topic
-            pub topic: String,
-            /// Response error code
+        pub struct Responses {
+            /// The topic name
+            pub name: String,
+            /// The deletion error, or 0 if the deletion succeeded.
             pub error_code: i16,
         }
     }
@@ -5258,17 +5620,19 @@ pub mod delete_records_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InitProducerIdRequest {
     V0 {
-        /// The transactional id or null if the producer is not transactional
+        /// The transactional id, or null if the producer is not transactional.
         transactional_id: crate::types::NullableString,
         /// The time in ms to wait for before aborting idle transactions sent by
-        /// this producer.
+        /// this producer. This is only relevant if a TransactionalId has been
+        /// defined.
         transaction_timeout_ms: i32,
     },
     V1 {
-        /// The transactional id or null if the producer is not transactional
+        /// The transactional id, or null if the producer is not transactional.
         transactional_id: crate::types::NullableString,
         /// The time in ms to wait for before aborting idle transactions sent by
-        /// this producer.
+        /// this producer. This is only relevant if a TransactionalId has been
+        /// defined.
         transaction_timeout_ms: i32,
     },
 }
@@ -5276,25 +5640,25 @@ pub enum InitProducerIdRequest {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InitProducerIdResponse {
     V0 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Current producer id in use by the transactional id.
+        /// The current producer id.
         producer_id: i64,
-        /// Current epoch associated with the producer id.
+        /// The current epoch associated with the producer id.
         producer_epoch: i16,
     },
     V1 {
-        /// Duration in milliseconds for which the request was throttled due to
-        /// quota violation (Zero if the request did not violate any quota)
+        /// The duration in milliseconds for which the request was throttled due
+        /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Current producer id in use by the transactional id.
+        /// The current producer id.
         producer_id: i64,
-        /// Current epoch associated with the producer id.
+        /// The current epoch associated with the producer id.
         producer_epoch: i16,
     },
 }
@@ -5312,6 +5676,12 @@ pub enum OffsetForLeaderEpochRequest {
     V2 {
         /// An array of topics to get epochs for
         topics: Vec<offset_for_leader_epoch_request::v2::Topics>,
+    },
+    V3 {
+        /// Broker id of the follower. For normal consumers, use -1.
+        replica_id: i32,
+        /// An array of topics to get epochs for
+        topics: Vec<offset_for_leader_epoch_request::v3::Topics>,
     },
 }
 
@@ -5371,6 +5741,29 @@ pub mod offset_for_leader_epoch_request {
             pub leader_epoch: i32,
         }
     }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// Name of topic
+            pub topic: String,
+            /// An array of partitions to get epochs for
+            pub partitions: Vec<Partitions>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Partitions {
+            /// Topic partition id
+            pub partition: i32,
+            /// The current leader epoch, if provided, is used to fence consumers/
+            /// replicas with old metadata. If the epoch provided by the client is
+            /// larger than the current epoch known to the broker, then the
+            /// UNKNOWN_LEADER_EPOCH error code will be returned. If the provided
+            /// epoch is smaller, then the FENCED_LEADER_EPOCH error code will be
+            /// returned.
+            pub current_leader_epoch: i32,
+            /// The epoch to lookup an offset for.
+            pub leader_epoch: i32,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -5392,6 +5785,14 @@ pub enum OffsetForLeaderEpochResponse {
         /// An array of topics for which we have leader offsets for some requested
         /// partition leader epoch
         topics: Vec<offset_for_leader_epoch_response::v2::Topics>,
+    },
+    V3 {
+        /// Duration in milliseconds for which the request was throttled due to
+        /// quota violation (Zero if the request did not violate any quota)
+        throttle_time_ms: i32,
+        /// An array of topics for which we have leader offsets for some requested
+        /// partition leader epoch
+        topics: Vec<offset_for_leader_epoch_response::v3::Topics>,
     },
 }
 
@@ -5435,6 +5836,26 @@ pub mod offset_for_leader_epoch_response {
         }
     }
     pub mod v2 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Topics {
+            /// Name of topic
+            pub topic: String,
+            /// An array of offsets by partition
+            pub partitions: Vec<Partitions>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Partitions {
+            /// Response error code
+            pub error_code: i16,
+            /// Topic partition id
+            pub partition: i32,
+            /// The leader epoch
+            pub leader_epoch: i32,
+            /// The end offset
+            pub end_offset: i64,
+        }
+    }
+    pub mod v3 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Topics {
             /// Name of topic
@@ -5975,7 +6396,7 @@ pub mod describe_acls_response {
             /// The resource name
             pub resource_name: String,
             /// The resource pattern type
-            pub resource_pattten_type: i8,
+            pub resource_pattern_type: i8,
             /// null
             pub acls: Vec<Acls>,
         }
@@ -6031,7 +6452,7 @@ pub mod create_acls_request {
             /// The resource name
             pub resource_name: String,
             /// The resource pattern type
-            pub resource_pattten_type: i8,
+            pub resource_pattern_type: i8,
             /// The ACL principal
             pub principal: String,
             /// The ACL host
@@ -6204,7 +6625,7 @@ pub mod delete_acls_response {
             /// The resource name
             pub resource_name: String,
             /// The resource pattern type
-            pub resource_pattten_type: i8,
+            pub resource_pattern_type: i8,
             /// The ACL principal
             pub principal: String,
             /// The ACL host
@@ -6730,34 +7151,38 @@ pub mod describe_log_dirs_response {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SaslAuthenticateRequest {
     V0 {
-        /// SASL authentication bytes from client as defined by the SASL mechanism.
-        sasl_auth_bytes: crate::types::Bytes,
+        /// The SASL authentication bytes from the client, as defined by the SASL
+        /// mechanism.
+        auth_bytes: crate::types::Bytes,
     },
     V1 {
-        /// SASL authentication bytes from client as defined by the SASL mechanism.
-        sasl_auth_bytes: crate::types::Bytes,
+        /// The SASL authentication bytes from the client, as defined by the SASL
+        /// mechanism.
+        auth_bytes: crate::types::Bytes,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SaslAuthenticateResponse {
     V0 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Response error message
+        /// The error message, or null if there was no error.
         error_message: crate::types::NullableString,
-        /// SASL authentication bytes from server as defined by the SASL mechanism.
-        sasl_auth_bytes: crate::types::Bytes,
+        /// The SASL authentication bytes from the server, as defined by the SASL
+        /// mechanism.
+        auth_bytes: crate::types::Bytes,
     },
     V1 {
-        /// Response error code
+        /// The error code, or 0 if there was no error.
         error_code: i16,
-        /// Response error message
+        /// The error message, or null if there was no error.
         error_message: crate::types::NullableString,
-        /// SASL authentication bytes from server as defined by the SASL mechanism.
-        sasl_auth_bytes: crate::types::Bytes,
-        /// Number of milliseconds after which only re-authentication over the
-        /// existing connection to create a new session can occur.
+        /// The SASL authentication bytes from the server, as defined by the SASL
+        /// mechanism.
+        auth_bytes: crate::types::Bytes,
+        /// The SASL authentication bytes from the server, as defined by the SASL
+        /// mechanism.
         session_lifetime_ms: i64,
     },
 }
@@ -7251,7 +7676,8 @@ pub enum ElectPreferredLeadersResponse {
         /// The duration in milliseconds for which the request was throttled due
         /// to a quota violation, or zero if the request did not violate any quota.
         throttle_time_ms: i32,
-        /// The error code, or 0 if there was no error.
+        /// The election results, or an empty array if the requester did not have
+        /// permission and the request asks for all partitions.
         replica_election_results: Vec<elect_preferred_leaders_response::v0::ReplicaElectionResults>,
     },
 }
@@ -7273,6 +7699,67 @@ pub mod elect_preferred_leaders_response {
             pub error_code: i16,
             /// The result message, or null if there was no error.
             pub error_message: crate::types::NullableString,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum IncrementalAlterConfigsRequest {
+    V0 {
+        /// The incremental updates for each resource.
+        resources: Vec<incremental_alter_configs_request::v0::Resources>,
+        /// True if we should validate the request, but not change the
+        /// configurations.
+        validate_only: bool,
+    },
+}
+
+pub mod incremental_alter_configs_request {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Resources {
+            /// The resource type.
+            pub resource_type: i8,
+            /// The resource name.
+            pub resource_name: String,
+            /// The configurations.
+            pub configs: Vec<Configs>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Configs {
+            /// The configuration key name.
+            pub name: String,
+            /// The type (Set, Delete, Append, Subtract) of operation.
+            pub config_operation: i8,
+            /// The value to set for the configuration key.
+            pub value: crate::types::NullableString,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum IncrementalAlterConfigsResponse {
+    V0 {
+        /// Duration in milliseconds for which the request was throttled due to a
+        /// quota violation, or zero if the request did not violate any quota.
+        throttle_time_ms: i32,
+        /// The responses for each resource.
+        responses: Vec<incremental_alter_configs_response::v0::Responses>,
+    },
+}
+
+pub mod incremental_alter_configs_response {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Responses {
+            /// The resource error code.
+            pub error_code: i16,
+            /// The resource error message, or null if there was no error.
+            pub error_message: crate::types::NullableString,
+            /// The resource type.
+            pub resource_type: i8,
+            /// The resource name.
+            pub resource_name: String,
         }
     }
 }

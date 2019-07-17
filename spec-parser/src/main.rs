@@ -74,7 +74,7 @@ fn main() -> Result<(), failure::Error> {
             raw
         }
         None => {
-            protocol_url = "https://kafka.apache.org/22/protocol.html";
+            protocol_url = "https://kafka.apache.org/23/protocol.html";
             reqwest::get(protocol_url)?.text()?
         }
     };
