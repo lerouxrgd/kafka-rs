@@ -1,6 +1,6 @@
 //! Generated from: https://kafka.apache.org/22/protocol.html
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct HeaderRequest {
     pub api_key: ApiKey,
     pub api_version: i16,

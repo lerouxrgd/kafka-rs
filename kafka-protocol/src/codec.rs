@@ -9,7 +9,10 @@ use serde::de::{
 use serde::ser::{self, Serialize};
 
 use crate::model::{HeaderRequest, HeaderResponse};
-use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
+use crate::types::{
+    Bytes, ControlRecord, NullableBytes, NullableString, Record, RecordBatch, Records, Varint,
+    Varlong,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
@@ -118,12 +121,14 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_u8(self, _val: u8) -> Result<()> {
-        Err(ser::Error::custom("not part of Kafka binary protocol: u8"))
+    fn serialize_u8(self, val: u8) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
-    fn serialize_u16(self, _val: u16) -> Result<()> {
-        Err(ser::Error::custom("not part of Kafka binary protocol: u16"))
+    fn serialize_u16(self, val: u16) -> Result<()> {
+        self.buf.write(&val.to_be_bytes())?;
+        Ok(())
     }
 
     fn serialize_u32(self, val: u32) -> Result<()> {
@@ -210,12 +215,13 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _val: &T,
+        val: &T,
     ) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        unimplemented!()
+        val.serialize(&mut *self)?;
+        Ok(())
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
@@ -527,7 +533,7 @@ where
 pub struct Deserializer<'de> {
     input: &'de [u8],
     identifiers: Vec<&'de str>,
-    version: usize,
+    version: Rc<RefCell<usize>>,
 }
 
 impl<'de> Deserializer<'de> {
@@ -535,7 +541,7 @@ impl<'de> Deserializer<'de> {
         Deserializer {
             input,
             identifiers: vec![],
-            version,
+            version: Rc::new(RefCell::new(version)),
         }
     }
 }
@@ -616,18 +622,32 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_i64(i64::from_be_bytes(bytes))
     }
 
-    fn deserialize_u8<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        if self.input.len() < 1 {
+            return Err(de::Error::custom("not enough bytes to deserialize u8"));
+        }
+        let (val, rest) = self.input.split_at(1);
+        self.input = rest;
+        let mut bytes = [0u8; 1];
+        bytes.copy_from_slice(val);
+        visitor.visit_u8(u8::from_be_bytes(bytes))
     }
 
-    fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        if self.input.len() < 2 {
+            return Err(de::Error::custom("not enough bytes to deserialize u16"));
+        }
+        let (val, rest) = self.input.split_at(2);
+        self.input = rest;
+        let mut bytes = [0u8; 2];
+        bytes.copy_from_slice(val);
+        visitor.visit_u16(u16::from_be_bytes(bytes))
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
@@ -734,11 +754,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         unimplemented!()
     }
 
-    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
@@ -819,9 +839,16 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let variant = variants.get(self.version).ok_or_else::<Error, _>(|| {
-            de::Error::custom(format!("no variant {} within {:?}", self.version, variants))
-        })?;
+        let variant = variants
+            .get(*self.version().borrow())
+            .ok_or_else::<Error, _>(|| {
+                de::Error::custom(format!(
+                    "no variant {} within {:?}",
+                    *self.version().borrow(),
+                    variants
+                ))
+            })?;
+
         let value = visitor.visit_enum(Enum::new(self, variant))?;
         Ok(value)
     }
@@ -1196,6 +1223,11 @@ impl<'de> Visitor<'de> for VarintVisitor {
     where
         E: de::Error,
     {
+        if bytes.len() < 1 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize varint (i32)",
+            ));
+        }
         let mut rdr = std::io::Cursor::new(bytes);
         let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
         *self.nb_read.borrow_mut() = nb_read;
@@ -1226,6 +1258,7 @@ impl Consumed for VarlongVisitor {
 
 impl<'de> Visitor<'de> for VarlongVisitor {
     type Value = Varlong;
+
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "a zigzag encoded variable length i64")
     }
@@ -1234,10 +1267,225 @@ impl<'de> Visitor<'de> for VarlongVisitor {
     where
         E: de::Error,
     {
+        if bytes.len() < 1 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize varint (i64)",
+            ));
+        }
         let mut rdr = std::io::Cursor::new(bytes);
         let (i, nb_read) = zag_i64(&mut rdr).map_err(de::Error::custom)?;
         *self.nb_read.borrow_mut() = nb_read;
         Ok(Varlong(i))
+    }
+}
+
+impl<'de> Deserialize<'de> for RecordBatch {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<RecordBatch, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const NAME: &'static str = "RecordBatch";
+        const FIELDS: &'static [&'static str] = &[
+            "base_offset",
+            "batch_length",
+            "partition_leader_epoch",
+            "magic",
+            "crc",
+            "attributes",
+            "last_offset_delta",
+            "first_timestamp",
+            "max_timestamp",
+            "producer_id",
+            "producer_epoch",
+            "base_sequence",
+            "records",
+        ];
+
+        let record_batch = deserializer.deserialize_struct(NAME, FIELDS, RecordBatchVisitor {})?;
+
+        Ok(record_batch)
+    }
+}
+
+trait Versioned {
+    fn version(&self) -> Rc<RefCell<usize>>;
+}
+
+impl<'de, 'a> Versioned for &'a mut Deserializer<'de> {
+    fn version(&self) -> Rc<RefCell<usize>> {
+        self.version.clone()
+    }
+}
+
+trait RecordType {
+    fn infer_type(&self) -> usize;
+}
+
+impl<'de, T: de::MapAccess<'de>> RecordType for T {
+    default fn infer_type(&self) -> usize {
+        0
+    }
+}
+
+impl<'a, 'de> RecordType for StructDeserializer<'a, 'de> {
+    fn infer_type(&self) -> usize {
+        // RecordBatch first bytes are:
+        //  base_offset: i64,
+        //  batch_length: i32,
+        //  partition_leader_epoch: i32,
+        //  magic: i8,
+        //  crc: i32,
+        //  attributes: u16,
+        //  ...
+        // and the part of attributes we're interested in is in the first byte
+        // so we end up with this formula to find the byte position:
+        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+        if self.de.input.len() < byte_pos {
+            return 0;
+        }
+        ((self.de.input[byte_pos - 1] >> 5) & 1) as usize
+    }
+}
+
+struct RecordBatchVisitor;
+
+impl<'de> Visitor<'de> for RecordBatchVisitor {
+    type Value = RecordBatch;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "kafka RecordBatch")
+    }
+
+    fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+    where
+        V: MapAccess<'de>,
+    {
+        let mut base_offset: Option<i64> = None;
+        let mut batch_length: Option<i32> = None;
+        let mut partition_leader_epoch: Option<i32> = None;
+        let mut magic: Option<i8> = None;
+        let mut crc: Option<i32> = None;
+        let mut attributes: Option<u16> = None;
+        let mut last_offset_delta: Option<i32> = None;
+        let mut first_timestamp: Option<i64> = None;
+        let mut max_timestamp: Option<i64> = None;
+        let mut producer_id: Option<i64> = None;
+        let mut producer_epoch: Option<i16> = None;
+        let mut base_sequence: Option<i32> = None;
+        let mut records: Option<Records> = None;
+
+        let version = map.infer_type();
+
+        match map.next_key()? {
+            Some::<()>(_key) => base_offset = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => batch_length = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => partition_leader_epoch = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => magic = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => crc = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => attributes = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => last_offset_delta = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => first_timestamp = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => max_timestamp = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => producer_id = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => producer_epoch = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => base_sequence = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => match version {
+                0 => {
+                    let records_variant: Vec<Record> = map.next_value()?;
+                    records = Some(Records::Batch(records_variant));
+                }
+                1 => {
+                    let control_records_variant: Vec<ControlRecord> = map.next_value()?;
+                    records = Some(Records::Control(control_records_variant));
+                }
+                _ => (),
+            },
+            None => (),
+        }
+
+        let base_offset = base_offset.ok_or_else(|| de::Error::missing_field("base_offset"))?;
+        let batch_length = batch_length.ok_or_else(|| de::Error::missing_field("batch_length"))?;
+        let partition_leader_epoch = partition_leader_epoch
+            .ok_or_else(|| de::Error::missing_field("partition_leader_epoch"))?;
+        let magic = magic.ok_or_else(|| de::Error::missing_field("magic"))?;
+        let crc = crc.ok_or_else(|| de::Error::missing_field("crc"))?;
+        let attributes = attributes.ok_or_else(|| de::Error::missing_field("attributes"))?;
+        let last_offset_delta =
+            last_offset_delta.ok_or_else(|| de::Error::missing_field("last_offset_delta"))?;
+        let first_timestamp =
+            first_timestamp.ok_or_else(|| de::Error::missing_field("first_timestamp"))?;
+        let max_timestamp =
+            max_timestamp.ok_or_else(|| de::Error::missing_field("max_timestamp"))?;
+        let producer_id = producer_id.ok_or_else(|| de::Error::missing_field("producer_id"))?;
+        let producer_epoch =
+            producer_epoch.ok_or_else(|| de::Error::missing_field("producer_epoch"))?;
+        let base_sequence =
+            base_sequence.ok_or_else(|| de::Error::missing_field("base_sequence"))?;
+        let records = records.ok_or_else(|| de::Error::missing_field("records"))?;
+
+        Ok(RecordBatch {
+            base_offset,
+            batch_length,
+            partition_leader_epoch,
+            magic,
+            crc,
+            attributes,
+            last_offset_delta,
+            first_timestamp,
+            max_timestamp,
+            producer_id,
+            producer_epoch,
+            base_sequence,
+            records,
+        })
     }
 }
 
@@ -1287,6 +1535,7 @@ mod tests {
     use super::*;
     use crate::model::*;
     use crate::types::*;
+    use matches::assert_matches;
     use std::io::Cursor;
 
     fn encode_single<T: Serialize>(val: &T) -> Result<Vec<u8>> {
@@ -1472,4 +1721,135 @@ mod tests {
         assert_eq!(val1, val2);
     }
 
+    #[test]
+    fn serde_record_batch_control_batch_variant() {
+        let r1 = RecordBatch {
+            base_offset: 256 + 1,
+            batch_length: 1,
+            partition_leader_epoch: 1,
+            magic: 1,
+            crc: 1,
+            attributes: 32,
+            last_offset_delta: 0,
+            first_timestamp: 0,
+            max_timestamp: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            base_sequence: 0,
+            records: Records::Control(vec![ControlRecord {
+                version: 0,
+                r#type: 0,
+            }]),
+        };
+
+        let bytes = encode_single(&r1).unwrap();
+
+        let r2 = decode_single::<RecordBatch>(&bytes, None).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn serde_record_batch_record_variant() {
+        let r1 = RecordBatch {
+            base_offset: 256 + 1,
+            batch_length: 1,
+            partition_leader_epoch: 1,
+            magic: 1,
+            crc: 1,
+            attributes: 0,
+            last_offset_delta: 0,
+            first_timestamp: 0,
+            max_timestamp: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            base_sequence: 0,
+            records: Records::Batch(vec![Record {
+                length: Varint(0),
+                attributes: 0,
+                timestamp_delta: Varint(0),
+                offset_delta: Varint(0),
+                key_length: Varint(0),
+                key: vec![0],
+                value_len: Varint(0),
+                value: vec![0],
+                headers: vec![HeaderRecord {
+                    key_length: Varint(0),
+                    key: String::from(""),
+                    value_length: Varint(0),
+                    value: vec![0],
+                }],
+            }]),
+        };
+
+        let bytes = encode_single(&r1).unwrap();
+
+        let r2 = decode_single::<RecordBatch>(&bytes, None).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn serde_record_batch_control_batch_variant_with_wrong_version() {
+        let r1 = RecordBatch {
+            base_offset: 256 + 1,
+            batch_length: 1,
+            partition_leader_epoch: 1,
+            magic: 1,
+            crc: 1,
+            attributes: 0, // wrong record type
+            last_offset_delta: 0,
+            first_timestamp: 0,
+            max_timestamp: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            base_sequence: 0,
+            records: Records::Control(vec![ControlRecord {
+                version: 0,
+                r#type: 0,
+            }]),
+        };
+
+        let bytes = encode_single(&r1).unwrap();
+
+        let r2 = decode_single::<RecordBatch>(&bytes, None);
+        assert_matches!(r2, Err(Error{ref message}) if message == "not enough bytes to deserialize varint (i32)");
+    }
+
+    #[test]
+    fn serde_record_batch_record_variant_with_wrong_version() {
+        let r1 = RecordBatch {
+            base_offset: 256 + 1,
+            batch_length: 1,
+            partition_leader_epoch: 1,
+            magic: 1,
+            crc: 1,
+            attributes: 32, // wrong record type
+            last_offset_delta: 0,
+            first_timestamp: 0,
+            max_timestamp: 0,
+            producer_id: 0,
+            producer_epoch: 0,
+            base_sequence: 0,
+            records: Records::Batch(vec![Record {
+                length: Varint(0),
+                attributes: 0,
+                timestamp_delta: Varint(0),
+                offset_delta: Varint(0),
+                key_length: Varint(0),
+                key: vec![0],
+                value_len: Varint(0),
+                value: vec![0],
+                headers: vec![HeaderRecord {
+                    key_length: Varint(0),
+                    key: String::from(""),
+                    value_length: Varint(0),
+                    value: vec![0],
+                }],
+            }]),
+        };
+
+        let bytes = encode_single(&r1).unwrap();
+
+        let r2 = decode_single::<RecordBatch>(&bytes, None);
+        assert_matches!(r2, Err(Error{ref message}) if message == "25 bytes remaining");
+    }
 }
