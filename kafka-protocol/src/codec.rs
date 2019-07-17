@@ -641,7 +641,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.input.len() < 2 {
-            return Err(de::Error::custom("not enough bytes to deserialize u32"));
+            return Err(de::Error::custom("not enough bytes to deserialize u16"));
         }
         let (val, rest) = self.input.split_at(2);
         self.input = rest;
