@@ -1700,7 +1700,7 @@ mod tests {
         use crate::types::NullableString;
 
         let val1 = CreateTopicsRequest::V0 {
-            create_topic_requests: vec![CreateTopicsRequests {
+            create_topic_requests: vec![CreateTopicRequests {
                 topic: "topic".to_owned(),
                 num_partitions: 32,
                 replication_factor: 16,
