@@ -1,5 +1,5 @@
 [package]
-name = "kafka-client"
+name = "kafka-rs"
 version = "0.1.0"
 authors = ["Leroux Romain <leroux.rgd@gmail.com>"]
 edition = "2018"

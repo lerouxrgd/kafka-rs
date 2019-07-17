@@ -21,15 +21,21 @@ fn wip_requests() -> std::io::Result<()> {
     println!("---> {:?}", header);
     println!("---> {:?}", resp);
 
+    use kafka_protocol::model::metadata_request::v0::Topics;
+
     let header = HeaderRequest {
         api_key: ApiKey::Metadata,
         api_version: 0,
         correlation_id: 42,
         client_id: NullableString::from("me"),
     };
+
     let req = MetadataRequest::V0 {
-        topics: vec!["test".to_owned()],
+        topics: vec![Topics {
+            name: "test".to_owned(),
+        }],
     };
+
     let bytes = encode_req(&header, &req).unwrap();
     stream.write(&bytes)?;
 
