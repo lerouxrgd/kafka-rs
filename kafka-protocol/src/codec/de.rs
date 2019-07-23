@@ -1,0 +1,859 @@
+use std::cell::RefCell;
+use std::io::prelude::*;
+use std::rc::Rc;
+use std::{fmt, io};
+
+use serde::de::{
+    self, Deserialize, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
+};
+
+use crate::codec::error::{Error, Result};
+use crate::model::HeaderResponse;
+use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
+
+pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
+where
+    R: io::Read,
+    T: de::DeserializeOwned,
+{
+    let mut buf = [0u8; 4];
+    rdr.read_exact(&mut buf)?;
+    let size = i32::from_be_bytes(buf);
+    let mut bytes = vec![0; size as usize];
+    rdr.read_exact(&mut bytes)?;
+    decode_resp::<T>(&bytes, version)
+}
+
+pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = Deserializer::from_bytes(input, version);
+
+    let header = HeaderResponse::deserialize(&mut deserializer)?;
+    let resp = T::deserialize(&mut deserializer)?;
+
+    if deserializer.input.len() == 0 {
+        Ok((header, resp))
+    } else {
+        Err(de::Error::custom(format!(
+            "{} bytes remaining",
+            deserializer.input.len()
+        )))
+    }
+}
+
+#[derive(Debug)]
+pub struct Deserializer<'de> {
+    pub(crate) input: &'de [u8],
+    pub(crate) identifiers: Vec<&'de str>,
+    pub(crate) unit_variant: usize,
+}
+
+impl<'de> Deserializer<'de> {
+    pub fn from_bytes(input: &'de [u8], version: usize) -> Self {
+        Deserializer {
+            input,
+            identifiers: vec![],
+            unit_variant: version,
+        }
+    }
+
+    /// 0 -> Record::Batch
+    /// 1 -> Record::Control
+    fn record_variant(&self) -> usize {
+        // TODO: return Result<usize, de:Error> ?
+
+        // RecordBatch first bytes are:
+        //  base_offset: i64,
+        //  batch_length: i32,
+        //  partition_leader_epoch: i32,
+        //  magic: i8,
+        //  crc: i32,
+        //  attributes: i16,
+        //  ...
+        // and the part of attributes we're interested in is in the first byte
+        // so we end up with this formula to find the byte position:
+        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+
+        if self.input.len() < byte_pos {
+            return 0;
+        }
+
+        ((self.input[byte_pos - 1] >> 5) & 1) as usize
+    }
+}
+
+impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+    type Error = Error;
+
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 1 {
+            return Err(de::Error::custom("not enough bytes to deserialize bool"));
+        }
+        let (val, rest) = self.input.split_at(1);
+        self.input = rest;
+        let val = match val[0] {
+            0u8 => false,
+            1u8 => true,
+            _ => return Err(de::Error::custom("not a boolean")),
+        };
+        visitor.visit_bool(val)
+    }
+
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 1 {
+            return Err(de::Error::custom("not enough bytes to deserialize i8"));
+        }
+        let (val, rest) = self.input.split_at(1);
+        self.input = rest;
+        let mut bytes = [0u8; 1];
+        bytes.copy_from_slice(val);
+        visitor.visit_i8(i8::from_be_bytes(bytes))
+    }
+
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 2 {
+            return Err(de::Error::custom("not enough bytes to deserialize i16"));
+        }
+        let (val, rest) = self.input.split_at(2);
+        self.input = rest;
+        let mut bytes = [0u8; 2];
+        bytes.copy_from_slice(val);
+        visitor.visit_i16(i16::from_be_bytes(bytes))
+    }
+
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 4 {
+            return Err(de::Error::custom("not enough bytes to deserialize i32"));
+        }
+        let (val, rest) = self.input.split_at(4);
+        self.input = rest;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(val);
+        visitor.visit_i32(i32::from_be_bytes(bytes))
+    }
+
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 8 {
+            return Err(de::Error::custom("not enough bytes to deserialize i64"));
+        }
+        let (val, rest) = self.input.split_at(8);
+        self.input = rest;
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(val);
+        visitor.visit_i64(i64::from_be_bytes(bytes))
+    }
+
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        // TODO: not needed ?
+        if self.input.len() < 1 {
+            return Err(de::Error::custom("not enough bytes to deserialize u8"));
+        }
+        let (val, rest) = self.input.split_at(1);
+        self.input = rest;
+        let mut bytes = [0u8; 1];
+        bytes.copy_from_slice(val);
+        visitor.visit_u8(u8::from_be_bytes(bytes))
+    }
+
+    fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 4 {
+            return Err(de::Error::custom("not enough bytes to deserialize u32"));
+        }
+        let (val, rest) = self.input.split_at(4);
+        self.input = rest;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(val);
+        visitor.visit_u32(u32::from_be_bytes(bytes))
+    }
+
+    fn deserialize_u64<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_str<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 2 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize string size (i16)",
+            ));
+        }
+        let (val, rest) = self.input.split_at(2);
+        self.input = rest;
+
+        let mut bytes = [0u8; 2];
+        bytes.copy_from_slice(val);
+        let size = i16::from_be_bytes(bytes) as usize;
+
+        if self.input.len() < size {
+            return Err(de::Error::custom(format!(
+                "not enough bytes ({}) to deserialize string of length {}",
+                self.input.len(),
+                size
+            )));
+        }
+        let (val, rest) = self.input.split_at(size);
+        self.input = rest;
+
+        let val = String::from_utf8(val.to_vec())?;
+        visitor.visit_string(val)
+    }
+
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        let c = visitor.consumed();
+        let val = visitor.visit_bytes(self.input);
+        let (_, rest) = self.input.split_at(*c.borrow());
+        self.input = rest;
+        val
+    }
+
+    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        visitor.visit_unit()
+    }
+
+    fn deserialize_unit_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if self.input.len() < 4 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize seq size (i32)",
+            ));
+        }
+        let (val, rest) = self.input.split_at(4);
+        self.input = rest;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(val);
+        let len = i32::from_be_bytes(bytes);
+        visitor.visit_seq(SeqDeserializer::new(&mut self, len))
+    }
+
+    fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_tuple_struct<V>(
+        self,
+        _name: &'static str,
+        _len: usize,
+        _visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_struct<V>(
+        mut self,
+        name: &'static str,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if name == "RecordBatch" {
+            let curr_version = self.unit_variant;
+            self.unit_variant = self.record_variant();
+            let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
+            self.unit_variant = curr_version;
+            res
+        } else {
+            visitor.visit_map(StructDeserializer::new(&mut self, fields))
+        }
+    }
+
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        let variant = variants.get(self.unit_variant).ok_or_else::<Error, _>(|| {
+            de::Error::custom(format!(
+                "no variant {} within {:?}",
+                self.unit_variant, variants
+            ))
+        })?;
+
+        let value = visitor.visit_enum(Enum::new(self, variant))?;
+        Ok(value)
+    }
+
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        if let Some(identifier) = self.identifiers.pop() {
+            visitor.visit_borrowed_str(identifier)
+        } else {
+            Err(de::Error::custom("no identifiers left on the stack"))
+        }
+    }
+
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+}
+
+struct SeqDeserializer<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    len: i32,
+}
+
+impl<'a, 'de> SeqDeserializer<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, len: i32) -> Self {
+        SeqDeserializer { de, len }
+    }
+}
+
+impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
+    type Error = Error;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        if self.len > 0 {
+            self.len = self.len - 1;
+            seed.deserialize(&mut *self.de).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+struct StructDeserializer<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    fields: &'static [&'static str],
+    i: usize,
+}
+
+impl<'a, 'de> StructDeserializer<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, fields: &'static [&'static str]) -> Self {
+        StructDeserializer { de, fields, i: 0 }
+    }
+}
+
+impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        if self.i < self.fields.len() {
+            self.de.identifiers.push(self.fields[self.i]);
+            self.i += 1;
+            seed.deserialize(&mut *self.de).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        seed.deserialize(&mut *self.de)
+    }
+}
+
+#[derive(Debug)]
+struct Enum<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    variant: &'static str,
+}
+
+impl<'a, 'de> Enum<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, variant: &'static str) -> Self {
+        Enum { de, variant }
+    }
+}
+
+impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
+    type Error = Error;
+    type Variant = Self;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        self.de.identifiers.push(self.variant);
+        let val = seed.deserialize(&mut *self.de)?;
+        Ok((val, self))
+    }
+}
+
+impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<()> {
+        unimplemented!()
+    }
+
+    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+
+    fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        for field in fields {
+            self.de.identifiers.push(field);
+        }
+        de::Deserializer::deserialize_struct(self.de, self.variant, fields, visitor)
+    }
+}
+
+trait Consumed {
+    fn consumed(&self) -> Rc<RefCell<usize>>;
+}
+
+impl<'de, T: Visitor<'de>> Consumed for T {
+    default fn consumed(&self) -> Rc<RefCell<usize>> {
+        Rc::new(RefCell::new(0))
+    }
+}
+
+impl<'de> Deserialize<'de> for Bytes {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Bytes, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct BytesVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for BytesVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for BytesVisitor {
+            type Value = Bytes;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "kafka bytes")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if bytes.len() < 4 {
+                    return Err(de::Error::custom(
+                        "not enough bytes to deserialize byte buf size (i32)",
+                    ));
+                }
+                let mut buf = [0u8; 4];
+                buf.copy_from_slice(&bytes[..4]);
+                let size = i32::from_be_bytes(buf);
+
+                let size = size as usize;
+                if bytes.len() < size + 4 {
+                    return Err(de::Error::custom(format!(
+                        "not enough bytes to deserialize byte buf of length {} + 4",
+                        size
+                    )));
+                }
+
+                let mut buf = vec![0u8; size];
+                buf.copy_from_slice(&bytes[4..size + 4]);
+                *self.nb_read.borrow_mut() = size + 4;
+
+                Ok(Bytes(buf))
+            }
+        }
+
+        deserializer.deserialize_bytes(BytesVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for NullableBytes {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<NullableBytes, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct NullableBytesVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for NullableBytesVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for NullableBytesVisitor {
+            type Value = NullableBytes;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "kafka bytes")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if bytes.len() < 4 {
+                    return Err(de::Error::custom(
+                        "not enough bytes to deserialize byte buf size (i32)",
+                    ));
+                }
+                let mut buf = [0u8; 4];
+                buf.copy_from_slice(&bytes[..4]);
+                let size = i32::from_be_bytes(buf);
+
+                if size == -1 {
+                    *self.nb_read.borrow_mut() = 4;
+                    Ok(NullableBytes(None))
+                } else {
+                    let size = size as usize;
+                    if bytes.len() < size + 4 {
+                        return Err(de::Error::custom(format!(
+                            "not enough bytes to deserialize byte buf of length {} + 4",
+                            size
+                        )));
+                    }
+
+                    let mut buf = vec![0u8; size];
+                    buf.copy_from_slice(&bytes[4..size + 4]);
+                    *self.nb_read.borrow_mut() = size + 4;
+
+                    Ok(NullableBytes(Some(buf)))
+                }
+            }
+        }
+
+        deserializer.deserialize_bytes(NullableBytesVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for NullableString {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<NullableString, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct NullableStringVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for NullableStringVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for NullableStringVisitor {
+            type Value = NullableString;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a kafka nullable string")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if bytes.len() < 2 {
+                    return Err(de::Error::custom(
+                        "not enough bytes to deserialize nullable str size (i16)",
+                    ));
+                }
+                let mut buf = [0u8; 2];
+                buf.copy_from_slice(&bytes[..2]);
+                let size = i16::from_be_bytes(buf);
+
+                if size == -1 {
+                    *self.nb_read.borrow_mut() = 2;
+                    return Ok(NullableString(None));
+                }
+
+                let size = size as usize;
+                if bytes.len() < size + 2 {
+                    return Err(de::Error::custom(format!(
+                        "not enough bytes to deserialize nullable str of length {} + 2",
+                        size
+                    )));
+                }
+
+                let mut buf = vec![0u8; size];
+                buf.copy_from_slice(&bytes[2..size + 2]);
+                *self.nb_read.borrow_mut() = size + 2;
+                let val = String::from_utf8(buf).map_err(de::Error::custom)?;
+
+                Ok(NullableString(Some(val)))
+            }
+        }
+
+        deserializer.deserialize_bytes(NullableStringVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Varint {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct VarintVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for VarintVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for VarintVisitor {
+            type Value = Varint;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a zigzag encoded variable length i32")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if bytes.len() < 1 {
+                    return Err(de::Error::custom(
+                        "not enough bytes to deserialize varint (i32)",
+                    ));
+                }
+                let mut rdr = std::io::Cursor::new(bytes);
+                let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                *self.nb_read.borrow_mut() = nb_read;
+                Ok(Varint(i))
+            }
+        }
+
+        deserializer.deserialize_bytes(VarintVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Varlong {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Varlong, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct VarlongVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for VarlongVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for VarlongVisitor {
+            type Value = Varlong;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a zigzag encoded variable length i64")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if bytes.len() < 1 {
+                    return Err(de::Error::custom(
+                        "not enough bytes to deserialize varlong (i64)",
+                    ));
+                }
+                let mut rdr = std::io::Cursor::new(bytes);
+                let (i, nb_read) = zag_i64(&mut rdr).map_err(de::Error::custom)?;
+                *self.nb_read.borrow_mut() = nb_read;
+                Ok(Varlong(i))
+            }
+        }
+
+        deserializer.deserialize_bytes(VarlongVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+    }
+}
+
+pub(crate) fn zag_i32<R: Read>(reader: &mut R) -> Result<(i32, usize)> {
+    let (i, nb_read) = zag_i64(reader)?;
+    if i < i64::from(i32::min_value()) || i > i64::from(i32::max_value()) {
+        Err(de::Error::custom("int out of range"))
+    } else {
+        Ok((i as i32, nb_read))
+    }
+}
+
+pub(crate) fn zag_i64<R: Read>(reader: &mut R) -> Result<(i64, usize)> {
+    let (z, nb_read) = decode_variable(reader)?;
+    Ok(if z & 0x1 == 0 {
+        ((z >> 1) as i64, nb_read)
+    } else {
+        (!(z >> 1) as i64, nb_read)
+    })
+}
+
+fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
+    let mut i = 0u64;
+    let mut buf = [0u8; 1];
+
+    let mut j = 0;
+    loop {
+        if j > 9 {
+            // if j * 7 > 64
+            return Err(de::Error::custom(
+                "overflow when decoding zigzag integer value",
+            ));
+        }
+        reader.read_exact(&mut buf[..])?;
+        i |= (u64::from(buf[0] & 0x7F)) << (j * 7);
+        j += 1;
+        if (buf[0] >> 7) == 0 {
+            break;
+        }
+    }
+
+    Ok((i, j))
+}

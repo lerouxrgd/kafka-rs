@@ -62,37 +62,54 @@ impl Deref for NullableBytes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct RecordBatch {
     pub base_offset: i64,
     pub batch_length: i32,
     pub partition_leader_epoch: i32,
     pub magic: i8,
-    pub crc: i32,
-    pub attributes: u16,
+    pub crc: u32,
+    pub attributes: i16,
     pub last_offset_delta: i32,
     pub first_timestamp: i64,
     pub max_timestamp: i64,
     pub producer_id: i64,
     pub producer_epoch: i16,
     pub base_sequence: i32,
-    pub records: Records,
+    pub records: Vec<Record>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub enum Compression {
-    NoCompression,
-    Gzip,
-    Snappy,
-    Lz4,
-    Zstd,
-    Unknown,
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
+pub enum Record {
+    Batch {
+        length: Varint,
+        attributes: i8,
+        timestamp_delta: Varint,
+        offset_delta: Varint,
+        key_length: Varint,
+        key: Vec<u8>,
+        value_len: Varint,
+        value: Vec<u8>,
+        headers: Vec<HeaderRecord>,
+    },
+    Control {
+        version: i16,
+        r#type: i16,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub enum TimestampType {
-    CreateTime,
-    LogAppendTime,
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
+pub struct HeaderRecord {
+    pub key_length: Varint,
+    pub key: String,
+    pub value_length: Varint,
+    pub value: Vec<u8>,
 }
 
 impl RecordBatch {
@@ -129,35 +146,18 @@ impl RecordBatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub enum Records {
-    Control(Vec<ControlRecord>),
-    Batch(Vec<Record>),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Compression {
+    NoCompression,
+    Gzip,
+    Snappy,
+    Lz4,
+    Zstd,
+    Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub struct ControlRecord {
-    pub version: i16,
-    pub r#type: i16,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub struct Record {
-    pub length: Varint,
-    pub attributes: i8,
-    pub timestamp_delta: Varint,
-    pub offset_delta: Varint,
-    pub key_length: Varint,
-    pub key: Vec<u8>,
-    pub value_len: Varint,
-    pub value: Vec<u8>,
-    pub headers: Vec<HeaderRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub struct HeaderRecord {
-    pub key_length: Varint,
-    pub key: String,
-    pub value_length: Varint,
-    pub value: Vec<u8>,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TimestampType {
+    CreateTime,
+    LogAppendTime,
 }
