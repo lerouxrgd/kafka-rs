@@ -47,7 +47,7 @@ where
 pub struct Deserializer<'de> {
     pub(crate) input: &'de [u8],
     pub(crate) identifiers: Vec<&'de str>,
-    pub(crate) unit_variant: usize,
+    pub(crate) struct_variant: usize,
 }
 
 impl<'de> Deserializer<'de> {
@@ -55,7 +55,7 @@ impl<'de> Deserializer<'de> {
         Deserializer {
             input,
             identifiers: vec![],
-            unit_variant: version,
+            struct_variant: version,
         }
     }
 
@@ -360,10 +360,10 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if name == "RecordBatch" {
-            let curr_version = self.unit_variant;
-            self.unit_variant = self.record_variant();
+            let curr_version = self.struct_variant;
+            self.struct_variant = self.record_variant();
             let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
-            self.unit_variant = curr_version;
+            self.struct_variant = curr_version;
             res
         } else {
             visitor.visit_map(StructDeserializer::new(&mut self, fields))
@@ -379,12 +379,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let variant = variants.get(self.unit_variant).ok_or_else::<Error, _>(|| {
-            de::Error::custom(format!(
-                "no variant {} within {:?}",
-                self.unit_variant, variants
-            ))
-        })?;
+        let variant = variants
+            .get(self.struct_variant)
+            .ok_or_else::<Error, _>(|| {
+                de::Error::custom(format!(
+                    "no variant {} within {:?}",
+                    self.struct_variant, variants
+                ))
+            })?;
 
         let value = visitor.visit_enum(Enum::new(self, variant))?;
         Ok(value)
