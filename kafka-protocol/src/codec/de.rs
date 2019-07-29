@@ -9,7 +9,10 @@ use serde::de::{
 
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
-use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
+use crate::types::{
+    Batch, Bytes, HeaderRecord, NullableBytes, NullableString, Record, RecordBatch,
+    Varint, Varlong,
+};
 
 pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
 where
@@ -21,7 +24,8 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_resp::<T>(&bytes, version)
+    let (a, b) = decode_resp::<T>(&mut bytes, version)?;
+    Ok((a, b))
 }
 
 pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
@@ -50,6 +54,16 @@ pub struct Deserializer<'de> {
     pub(crate) struct_variant: usize,
 }
 
+trait Versioned {
+    fn version(&self) -> usize;
+}
+
+impl<'de, 'a> Versioned for &'a mut Deserializer<'de> {
+    fn version(&self) -> usize {
+        self.struct_variant
+    }
+}
+
 impl<'de> Deserializer<'de> {
     pub fn from_bytes(input: &'de [u8], version: usize) -> Self {
         Deserializer {
@@ -57,6 +71,10 @@ impl<'de> Deserializer<'de> {
             identifiers: vec![],
             struct_variant: version,
         }
+    }
+
+    pub fn get_rest(&self) -> &[u8] {
+        self.input
     }
 
     /// 0 -> Record::Batch
@@ -268,6 +286,7 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         let c = visitor.consumed();
         let val = visitor.visit_bytes(self.input);
         let (_, rest) = self.input.split_at(*c.borrow());
+        println!("rest {:?}", rest);
         self.input = rest;
         val
     }
@@ -300,11 +319,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         unimplemented!()
     }
 
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        visitor.visit_newtype_struct(self)
     }
 
     fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
@@ -359,15 +378,19 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if name == "RecordBatch" {
-            let curr_version = self.struct_variant;
-            self.struct_variant = self.record_variant();
-            let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
-            self.struct_variant = curr_version;
-            res
-        } else {
-            visitor.visit_map(StructDeserializer::new(&mut self, fields))
-        }
+        // if name == "RecordBatch" {
+        //     println!("lala");
+        //     let curr_version = self.struct_variant;
+        //     self.struct_variant = self.record_variant();
+        //     let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
+        //     self.struct_variant = curr_version;
+        //     res
+        // } else {
+        //     visitor.visit_map(StructDeserializer::new(&mut self, fields))
+        // }
+        // println!("fields={:?}", fields);
+        // println!("number of bytes={:?}", self.input.len());
+        visitor.visit_map(StructDeserializer::new(&mut self, fields))
     }
 
     fn deserialize_enum<V>(
@@ -514,11 +537,12 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
         unimplemented!()
     }
 
-    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
     where
         T: DeserializeSeed<'de>,
     {
-        unimplemented!()
+        let val = seed.deserialize(&mut *self.de)?;
+        Ok(val)
     }
 
     fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
@@ -532,6 +556,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     where
         V: Visitor<'de>,
     {
+        println!("youhou");
         for field in fields {
             self.de.identifiers.push(field);
         }
@@ -731,44 +756,44 @@ impl<'de> Deserialize<'de> for NullableString {
     }
 }
 
+struct VarintVisitor {
+    nb_read: Rc<RefCell<usize>>,
+}
+
+impl Consumed for VarintVisitor {
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        self.nb_read.clone()
+    }
+}
+
+impl<'de> Visitor<'de> for VarintVisitor {
+    type Value = Varint;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a zigzag encoded variable length i32")
+    }
+
+    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if bytes.len() < 1 {
+            return Err(de::Error::custom(
+                "not enough bytes to deserialize varint (i32)",
+            ));
+        }
+        let mut rdr = std::io::Cursor::new(bytes);
+        let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+        *self.nb_read.borrow_mut() = nb_read;
+        Ok(Varint(i))
+    }
+}
+
 impl<'de> Deserialize<'de> for Varint {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        struct VarintVisitor {
-            nb_read: Rc<RefCell<usize>>,
-        }
-
-        impl Consumed for VarintVisitor {
-            fn consumed(&self) -> Rc<RefCell<usize>> {
-                self.nb_read.clone()
-            }
-        }
-
-        impl<'de> Visitor<'de> for VarintVisitor {
-            type Value = Varint;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a zigzag encoded variable length i32")
-            }
-
-            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if bytes.len() < 1 {
-                    return Err(de::Error::custom(
-                        "not enough bytes to deserialize varint (i32)",
-                    ));
-                }
-                let mut rdr = std::io::Cursor::new(bytes);
-                let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                *self.nb_read.borrow_mut() = nb_read;
-                Ok(Varint(i))
-            }
-        }
-
         deserializer.deserialize_bytes(VarintVisitor {
             nb_read: Rc::new(RefCell::new(0)),
         })
@@ -858,4 +883,356 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     }
 
     Ok((i, j))
+}
+
+impl<'de> Deserialize<'de> for RecordBatch {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<RecordBatch, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const NAME: &'static str = "RecordBatch";
+        const FIELDS: &'static [&'static str] = &[
+            "base_offset",
+            "batch_length",
+            "partition_leader_epoch",
+            "magic",
+            "crc",
+            "attributes",
+            "last_offset_delta",
+            "first_timestamp",
+            "max_timestamp",
+            "producer_id",
+            "producer_epoch",
+            "base_sequence",
+            "records",
+        ];
+
+        let record_batch = deserializer.deserialize_struct(NAME, FIELDS, RecordBatchVisitor {})?;
+
+        Ok(record_batch)
+    }
+}
+
+trait Variant {
+    fn infer_variant(&self) -> usize;
+    fn get_variant(&self) -> usize;
+    fn set_variant(&mut self, version: usize);
+}
+
+impl<'de, T: de::MapAccess<'de>> Variant for T {
+    default fn infer_variant(&self) -> usize {
+        0
+    }
+    default fn get_variant(&self) -> usize {
+        0
+    }
+    default fn set_variant(&mut self, version: usize) {}
+}
+
+impl<'a, 'de> Variant for StructDeserializer<'a, 'de> {
+    fn infer_variant(&self) -> usize {
+        // RecordBatch first bytes are:
+        //  base_offset: i64,
+        //  batch_length: i32,
+        //  partition_leader_epoch: i32,
+        //  magic: i8,
+        //  crc: i32,
+        //  attributes: u16,
+        //  ...
+        // and the part of attributes we're interested in is in the first byte
+        // so we end up with this formula to find the byte position:
+        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+        if self.de.input.len() < byte_pos {
+            return 0;
+        }
+        ((self.de.input[byte_pos - 1] >> 5) & 1) as usize
+    }
+
+    fn get_variant(&self) -> usize {
+        self.de.struct_variant
+    }
+
+    fn set_variant(&mut self, version: usize) {
+        self.de.struct_variant = version
+    }
+}
+
+struct RecordBatchVisitor;
+
+impl<'de> Visitor<'de> for RecordBatchVisitor {
+    type Value = RecordBatch;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "kafka RecordBatch")
+    }
+
+    fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+    where
+        V: MapAccess<'de>,
+    {
+        let mut base_offset: Option<i64> = None;
+        let mut batch_length: Option<i32> = None;
+        let mut partition_leader_epoch: Option<i32> = None;
+        let mut magic: Option<i8> = None;
+        let mut crc: Option<u32> = None;
+        let mut attributes: Option<i16> = None;
+        let mut last_offset_delta: Option<i32> = None;
+        let mut first_timestamp: Option<i64> = None;
+        let mut max_timestamp: Option<i64> = None;
+        let mut producer_id: Option<i64> = None;
+        let mut producer_epoch: Option<i16> = None;
+        let mut base_sequence: Option<i32> = None;
+        let mut records: Option<Vec<Record>> = None;
+
+        let curr_variant = map.get_variant();
+        let inferred_variant = map.infer_variant();
+        map.set_variant(inferred_variant);
+
+        match map.next_key()? {
+            Some::<()>(_key) => base_offset = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => batch_length = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => partition_leader_epoch = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => magic = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => crc = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => attributes = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => last_offset_delta = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => first_timestamp = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => max_timestamp = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => producer_id = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => producer_epoch = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => base_sequence = Some(map.next_value()?),
+            None => (),
+        }
+
+        match map.next_key()? {
+            Some::<()>(_key) => records = Some(map.next_value()?),
+            None => (),
+        }
+
+        let base_offset = base_offset.ok_or_else(|| de::Error::missing_field("base_offset"))?;
+        let batch_length = batch_length.ok_or_else(|| de::Error::missing_field("batch_length"))?;
+        let partition_leader_epoch = partition_leader_epoch
+            .ok_or_else(|| de::Error::missing_field("partition_leader_epoch"))?;
+        let magic = magic.ok_or_else(|| de::Error::missing_field("magic"))?;
+        let crc = crc.ok_or_else(|| de::Error::missing_field("crc"))?;
+        let attributes = attributes.ok_or_else(|| de::Error::missing_field("attributes"))?;
+        let last_offset_delta =
+            last_offset_delta.ok_or_else(|| de::Error::missing_field("last_offset_delta"))?;
+        let first_timestamp =
+            first_timestamp.ok_or_else(|| de::Error::missing_field("first_timestamp"))?;
+        let max_timestamp =
+            max_timestamp.ok_or_else(|| de::Error::missing_field("max_timestamp"))?;
+        let producer_id = producer_id.ok_or_else(|| de::Error::missing_field("producer_id"))?;
+        let producer_epoch =
+            producer_epoch.ok_or_else(|| de::Error::missing_field("producer_epoch"))?;
+        let base_sequence =
+            base_sequence.ok_or_else(|| de::Error::missing_field("base_sequence"))?;
+        let records = records.ok_or_else(|| de::Error::missing_field("records"))?;
+
+        map.set_variant(curr_variant);
+
+        Ok(RecordBatch {
+            base_offset,
+            batch_length,
+            partition_leader_epoch,
+            magic,
+            crc,
+            attributes,
+            last_offset_delta,
+            first_timestamp,
+            max_timestamp,
+            producer_id,
+            producer_epoch,
+            base_sequence,
+            records,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Batch {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct BatchVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for BatchVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for BatchVisitor {
+            type Value = Batch;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a Batch")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // println!("input bytes: {:?}", bytes);
+
+                if bytes.len() < 1 {
+                    return Err(de::Error::custom("not enough bytes to deserialize Batch"));
+                }
+
+                let mut rdr = std::io::Cursor::new(bytes);
+                let (length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                // println!("length: {:?}", length);
+                // println!("nb_read: {:?}", nb_read);
+                // println!("rdr: {:?}", rdr);
+
+                if bytes.len() < (length as usize + nb_read) {
+                    return Err(de::Error::custom("not enough bytes to deserialize Batch"));
+                }
+
+                let mut buf = [0u8; 1];
+                rdr.read_exact(&mut buf); // TODO: handle error
+                let attributes = i8::from_be_bytes(buf);
+                // println!("attributes: {:?}", attributes);
+
+                let (timestamp_delta, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                // println!("timestamp_delta: {:?}", timestamp_delta);
+                // println!("nb_read: {:?}", nb_read);
+
+                let (offset_delta, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                // println!("offset_delta: {:?}", offset_delta);
+                // println!("nb_read: {:?}", nb_read);
+
+                let (key_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                // println!("key_length: {:?}", key_length);
+                // println!("nb_read: {:?}", nb_read);
+
+                let mut key: Vec<u8> = Vec::new(); 
+                if key_length != -1 {
+                    for _i in 0..key_length  {
+                        let mut buf = [0u8; 1];
+                        rdr.read_exact(&mut buf); // TODO: handle error
+                        key.push(buf[0]);
+                    }
+                    // println!("key: {:?}", key);
+                }
+
+                let (value_len, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                // println!("value_len: {:?}", value_len);
+                // println!("nb_read: {:?}", nb_read);
+
+                let mut value: Vec<u8> = Vec::new(); 
+                if value_len != -1 {
+                    for _i in 0..value_len  {
+                        let mut buf = [0u8; 1];
+                        rdr.read_exact(&mut buf); // TODO: handle error
+                        value.push(buf[0]);
+                    }
+                    // println!("value: {:?}", value);
+                }
+
+                let (header_len, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                // println!("header_len: {:?}", header_len);
+                // println!("nb_read: {:?}", nb_read);
+
+                let mut headers: Vec<HeaderRecord> = Vec::new(); 
+                if header_len != -1 {
+                    for _i in 0..header_len  {
+                        let (header_key_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+
+                        let mut header_key = String::from("");
+                        if header_key_length != -1 {
+                            let mut buf = vec![0u8; header_key_length as usize];
+                            rdr.read_exact(&mut buf); // TODO: handle error
+                            header_key = String::from_utf8(buf).map_err(de::Error::custom)?;
+                        }
+
+                        let (header_value_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                        let mut header_value: Vec<u8> = Vec::new();
+                        if header_value_length != -1 {
+                            for _i in 0..header_value_length {
+                                let mut buf = [0u8; 1];
+                                rdr.read_exact(&mut buf); // TODO: handle error
+                                header_value.push(buf[0]);
+                            }
+                        }
+
+                        headers.push(HeaderRecord {
+                            key_length: Varint(header_key_length),
+                            key: header_key,
+                            value_length: Varint(header_value_length),
+                            value: header_value,
+                        });
+                    }
+                    // println!("headers: {:?}", headers);
+                }
+
+                // println!("read: {:?}", length as usize + nb_read);
+                *self.nb_read.borrow_mut() = length as usize + nb_read;
+
+                Ok(Batch {
+                    length: Varint(length),
+                    attributes,
+                    timestamp_delta: Varint(timestamp_delta),
+                    offset_delta: Varint(offset_delta),
+                    key_length: Varint(key_length),
+                    key,
+                    value_len: Varint(value_len),
+                    value,
+                    header_len: Varint(header_len),
+                    headers,
+                })
+            }
+        }
+
+        deserializer.deserialize_bytes(BatchVisitor {
+            nb_read: Rc::new(RefCell::new(0)),
+        })
+
+    }
 }
