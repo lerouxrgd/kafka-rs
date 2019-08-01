@@ -881,7 +881,6 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     Ok((i, j))
 }
 
-
 impl<'de> Deserialize<'de> for Batch {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>
     where
@@ -901,45 +900,40 @@ impl<'de> Deserialize<'de> for Batch {
             type Value = Batch;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a Batch")
+                write!(formatter, "a batch")
             }
 
             fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                // println!("input bytes: {:?}", bytes);
-
                 if bytes.len() < 1 {
                     return Err(de::Error::custom("not enough bytes to deserialize Batch"));
                 }
 
                 let mut rdr = std::io::Cursor::new(bytes);
                 let (length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                // println!("length: {:?}", length);
-                // println!("nb_read: {:?}", nb_read);
-                // println!("rdr: {:?}", rdr);
 
                 if bytes.len() < (length as usize + nb_read) {
                     return Err(de::Error::custom("not enough bytes to deserialize Batch"));
                 }
 
+                let nb_to_read = length as usize + nb_read;
+                let mut actual_nb_read = nb_read;
+
                 let mut buf = [0u8; 1];
                 rdr.read_exact(&mut buf); // TODO: handle error
                 let attributes = i8::from_be_bytes(buf);
-                // println!("attributes: {:?}", attributes);
+                actual_nb_read += 1;
 
                 let (timestamp_delta, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                // println!("timestamp_delta: {:?}", timestamp_delta);
-                // println!("nb_read: {:?}", nb_read);
+                actual_nb_read += nb_read;
 
                 let (offset_delta, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                // println!("offset_delta: {:?}", offset_delta);
-                // println!("nb_read: {:?}", nb_read);
+                actual_nb_read += nb_read;
 
                 let (key_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                // println!("key_length: {:?}", key_length);
-                // println!("nb_read: {:?}", nb_read);
+                actual_nb_read += nb_read;
 
                 let mut key: Vec<u8> = Vec::new(); 
                 if key_length != -1 {
@@ -947,13 +941,12 @@ impl<'de> Deserialize<'de> for Batch {
                         let mut buf = [0u8; 1];
                         rdr.read_exact(&mut buf); // TODO: handle error
                         key.push(buf[0]);
+                        actual_nb_read += 1;
                     }
-                    // println!("key: {:?}", key);
                 }
 
                 let (value_len, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                // println!("value_len: {:?}", value_len);
-                // println!("nb_read: {:?}", nb_read);
+                actual_nb_read += nb_read;
 
                 let mut value: Vec<u8> = Vec::new(); 
                 if value_len != -1 {
@@ -961,33 +954,36 @@ impl<'de> Deserialize<'de> for Batch {
                         let mut buf = [0u8; 1];
                         rdr.read_exact(&mut buf); // TODO: handle error
                         value.push(buf[0]);
+                        actual_nb_read += 1;
                     }
-                    // println!("value: {:?}", value);
                 }
 
                 let (header_len, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                // println!("header_len: {:?}", header_len);
-                // println!("nb_read: {:?}", nb_read);
+                actual_nb_read += nb_read;
 
                 let mut headers: Vec<HeaderRecord> = Vec::new(); 
                 if header_len != -1 {
                     for _i in 0..header_len  {
                         let (header_key_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                        actual_nb_read += nb_read;
 
                         let mut header_key = String::from("");
                         if header_key_length != -1 {
                             let mut buf = vec![0u8; header_key_length as usize];
                             rdr.read_exact(&mut buf); // TODO: handle error
                             header_key = String::from_utf8(buf).map_err(de::Error::custom)?;
+                            actual_nb_read += header_key_length as usize;
                         }
 
                         let (header_value_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                        actual_nb_read += nb_read;
                         let mut header_value: Vec<u8> = Vec::new();
                         if header_value_length != -1 {
                             for _i in 0..header_value_length {
                                 let mut buf = [0u8; 1];
                                 rdr.read_exact(&mut buf); // TODO: handle error
                                 header_value.push(buf[0]);
+                                actual_nb_read += 1;
                             }
                         }
 
@@ -998,10 +994,11 @@ impl<'de> Deserialize<'de> for Batch {
                             value: header_value,
                         });
                     }
-                    // println!("headers: {:?}", headers);
                 }
 
-                // println!("read: {:?}", length as usize + nb_read);
+                if actual_nb_read != nb_to_read {
+                    return Err(de::Error::custom("batch length does not match number of bytes read"));
+                }
                 *self.nb_read.borrow_mut() = length as usize + nb_read;
 
                 Ok(Batch {
