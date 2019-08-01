@@ -10,7 +10,7 @@ use serde::de::{
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
 use crate::types::{
-    Batch, Bytes, HeaderRecord, NullableBytes, NullableString, Record, RecordBatch,
+    Batch, Bytes, HeaderRecord, NullableBytes, NullableString,
     Varint, Varlong,
 };
 
@@ -378,19 +378,15 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // if name == "RecordBatch" {
-        //     println!("lala");
-        //     let curr_version = self.struct_variant;
-        //     self.struct_variant = self.record_variant();
-        //     let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
-        //     self.struct_variant = curr_version;
-        //     res
-        // } else {
-        //     visitor.visit_map(StructDeserializer::new(&mut self, fields))
-        // }
-        // println!("fields={:?}", fields);
-        // println!("number of bytes={:?}", self.input.len());
-        visitor.visit_map(StructDeserializer::new(&mut self, fields))
+        if name == "RecordBatch" {
+            let curr_version = self.struct_variant;
+            self.struct_variant = self.record_variant();
+            let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
+            self.struct_variant = curr_version;
+            res
+        } else {
+            visitor.visit_map(StructDeserializer::new(&mut self, fields))
+        }
     }
 
     fn deserialize_enum<V>(
@@ -885,213 +881,6 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     Ok((i, j))
 }
 
-impl<'de> Deserialize<'de> for RecordBatch {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<RecordBatch, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        const NAME: &'static str = "RecordBatch";
-        const FIELDS: &'static [&'static str] = &[
-            "base_offset",
-            "batch_length",
-            "partition_leader_epoch",
-            "magic",
-            "crc",
-            "attributes",
-            "last_offset_delta",
-            "first_timestamp",
-            "max_timestamp",
-            "producer_id",
-            "producer_epoch",
-            "base_sequence",
-            "records",
-        ];
-
-        let record_batch = deserializer.deserialize_struct(NAME, FIELDS, RecordBatchVisitor {})?;
-
-        Ok(record_batch)
-    }
-}
-
-trait Variant {
-    fn infer_variant(&self) -> usize;
-    fn get_variant(&self) -> usize;
-    fn set_variant(&mut self, version: usize);
-}
-
-impl<'de, T: de::MapAccess<'de>> Variant for T {
-    default fn infer_variant(&self) -> usize {
-        0
-    }
-    default fn get_variant(&self) -> usize {
-        0
-    }
-    default fn set_variant(&mut self, version: usize) {}
-}
-
-impl<'a, 'de> Variant for StructDeserializer<'a, 'de> {
-    fn infer_variant(&self) -> usize {
-        // RecordBatch first bytes are:
-        //  base_offset: i64,
-        //  batch_length: i32,
-        //  partition_leader_epoch: i32,
-        //  magic: i8,
-        //  crc: i32,
-        //  attributes: u16,
-        //  ...
-        // and the part of attributes we're interested in is in the first byte
-        // so we end up with this formula to find the byte position:
-        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
-        if self.de.input.len() < byte_pos {
-            return 0;
-        }
-        ((self.de.input[byte_pos - 1] >> 5) & 1) as usize
-    }
-
-    fn get_variant(&self) -> usize {
-        self.de.struct_variant
-    }
-
-    fn set_variant(&mut self, version: usize) {
-        self.de.struct_variant = version
-    }
-}
-
-struct RecordBatchVisitor;
-
-impl<'de> Visitor<'de> for RecordBatchVisitor {
-    type Value = RecordBatch;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "kafka RecordBatch")
-    }
-
-    fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
-    where
-        V: MapAccess<'de>,
-    {
-        let mut base_offset: Option<i64> = None;
-        let mut batch_length: Option<i32> = None;
-        let mut partition_leader_epoch: Option<i32> = None;
-        let mut magic: Option<i8> = None;
-        let mut crc: Option<u32> = None;
-        let mut attributes: Option<i16> = None;
-        let mut last_offset_delta: Option<i32> = None;
-        let mut first_timestamp: Option<i64> = None;
-        let mut max_timestamp: Option<i64> = None;
-        let mut producer_id: Option<i64> = None;
-        let mut producer_epoch: Option<i16> = None;
-        let mut base_sequence: Option<i32> = None;
-        let mut records: Option<Vec<Record>> = None;
-
-        let curr_variant = map.get_variant();
-        let inferred_variant = map.infer_variant();
-        map.set_variant(inferred_variant);
-
-        match map.next_key()? {
-            Some::<()>(_key) => base_offset = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => batch_length = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => partition_leader_epoch = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => magic = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => crc = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => attributes = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => last_offset_delta = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => first_timestamp = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => max_timestamp = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => producer_id = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => producer_epoch = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => base_sequence = Some(map.next_value()?),
-            None => (),
-        }
-
-        match map.next_key()? {
-            Some::<()>(_key) => records = Some(map.next_value()?),
-            None => (),
-        }
-
-        let base_offset = base_offset.ok_or_else(|| de::Error::missing_field("base_offset"))?;
-        let batch_length = batch_length.ok_or_else(|| de::Error::missing_field("batch_length"))?;
-        let partition_leader_epoch = partition_leader_epoch
-            .ok_or_else(|| de::Error::missing_field("partition_leader_epoch"))?;
-        let magic = magic.ok_or_else(|| de::Error::missing_field("magic"))?;
-        let crc = crc.ok_or_else(|| de::Error::missing_field("crc"))?;
-        let attributes = attributes.ok_or_else(|| de::Error::missing_field("attributes"))?;
-        let last_offset_delta =
-            last_offset_delta.ok_or_else(|| de::Error::missing_field("last_offset_delta"))?;
-        let first_timestamp =
-            first_timestamp.ok_or_else(|| de::Error::missing_field("first_timestamp"))?;
-        let max_timestamp =
-            max_timestamp.ok_or_else(|| de::Error::missing_field("max_timestamp"))?;
-        let producer_id = producer_id.ok_or_else(|| de::Error::missing_field("producer_id"))?;
-        let producer_epoch =
-            producer_epoch.ok_or_else(|| de::Error::missing_field("producer_epoch"))?;
-        let base_sequence =
-            base_sequence.ok_or_else(|| de::Error::missing_field("base_sequence"))?;
-        let records = records.ok_or_else(|| de::Error::missing_field("records"))?;
-
-        map.set_variant(curr_variant);
-
-        Ok(RecordBatch {
-            base_offset,
-            batch_length,
-            partition_leader_epoch,
-            magic,
-            crc,
-            attributes,
-            last_offset_delta,
-            first_timestamp,
-            max_timestamp,
-            producer_id,
-            producer_epoch,
-            base_sequence,
-            records,
-        })
-    }
-}
 
 impl<'de> Deserialize<'de> for Batch {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>

@@ -64,7 +64,7 @@ impl Deref for NullableBytes {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize
 )]
 pub struct RecordBatch {
     pub base_offset: i64,
