@@ -54,16 +54,6 @@ pub struct Deserializer<'de> {
     pub(crate) struct_variant: usize,
 }
 
-trait Versioned {
-    fn version(&self) -> usize;
-}
-
-impl<'de, 'a> Versioned for &'a mut Deserializer<'de> {
-    fn version(&self) -> usize {
-        self.struct_variant
-    }
-}
-
 impl<'de> Deserializer<'de> {
     pub fn from_bytes(input: &'de [u8], version: usize) -> Self {
         Deserializer {
@@ -751,45 +741,44 @@ impl<'de> Deserialize<'de> for NullableString {
         })
     }
 }
-
-struct VarintVisitor {
-    nb_read: Rc<RefCell<usize>>,
-}
-
-impl Consumed for VarintVisitor {
-    fn consumed(&self) -> Rc<RefCell<usize>> {
-        self.nb_read.clone()
-    }
-}
-
-impl<'de> Visitor<'de> for VarintVisitor {
-    type Value = Varint;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "a zigzag encoded variable length i32")
-    }
-
-    fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        if bytes.len() < 1 {
-            return Err(de::Error::custom(
-                "not enough bytes to deserialize varint (i32)",
-            ));
-        }
-        let mut rdr = std::io::Cursor::new(bytes);
-        let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-        *self.nb_read.borrow_mut() = nb_read;
-        Ok(Varint(i))
-    }
-}
-
 impl<'de> Deserialize<'de> for Varint {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
     where
         D: de::Deserializer<'de>,
     {
+        struct VarintVisitor {
+            nb_read: Rc<RefCell<usize>>,
+        }
+
+        impl Consumed for VarintVisitor {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de> Visitor<'de> for VarintVisitor {
+            type Value = Varint;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a zigzag encoded variable length i32")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if bytes.len() < 1 {
+                    return Err(de::Error::custom(
+                        "not enough bytes to deserialize varint (i32)",
+                    ));
+                }
+                let mut rdr = std::io::Cursor::new(bytes);
+                let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
+                *self.nb_read.borrow_mut() = nb_read;
+                Ok(Varint(i))
+            }
+        }
+
         deserializer.deserialize_bytes(VarintVisitor {
             nb_read: Rc::new(RefCell::new(0)),
         })
@@ -838,47 +827,6 @@ impl<'de> Deserialize<'de> for Varlong {
             nb_read: Rc::new(RefCell::new(0)),
         })
     }
-}
-
-pub(crate) fn zag_i32<R: Read>(reader: &mut R) -> Result<(i32, usize)> {
-    let (i, nb_read) = zag_i64(reader)?;
-    if i < i64::from(i32::min_value()) || i > i64::from(i32::max_value()) {
-        Err(de::Error::custom("int out of range"))
-    } else {
-        Ok((i as i32, nb_read))
-    }
-}
-
-pub(crate) fn zag_i64<R: Read>(reader: &mut R) -> Result<(i64, usize)> {
-    let (z, nb_read) = decode_variable(reader)?;
-    Ok(if z & 0x1 == 0 {
-        ((z >> 1) as i64, nb_read)
-    } else {
-        (!(z >> 1) as i64, nb_read)
-    })
-}
-
-fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
-    let mut i = 0u64;
-    let mut buf = [0u8; 1];
-
-    let mut j = 0;
-    loop {
-        if j > 9 {
-            // if j * 7 > 64
-            return Err(de::Error::custom(
-                "overflow when decoding zigzag integer value",
-            ));
-        }
-        reader.read_exact(&mut buf[..])?;
-        i |= (u64::from(buf[0] & 0x7F)) << (j * 7);
-        j += 1;
-        if (buf[0] >> 7) == 0 {
-            break;
-        }
-    }
-
-    Ok((i, j))
 }
 
 impl<'de> Deserialize<'de> for Batch {
@@ -1021,4 +969,45 @@ impl<'de> Deserialize<'de> for Batch {
         })
 
     }
+}
+
+pub(crate) fn zag_i32<R: Read>(reader: &mut R) -> Result<(i32, usize)> {
+    let (i, nb_read) = zag_i64(reader)?;
+    if i < i64::from(i32::min_value()) || i > i64::from(i32::max_value()) {
+        Err(de::Error::custom("int out of range"))
+    } else {
+        Ok((i as i32, nb_read))
+    }
+}
+
+pub(crate) fn zag_i64<R: Read>(reader: &mut R) -> Result<(i64, usize)> {
+    let (z, nb_read) = decode_variable(reader)?;
+    Ok(if z & 0x1 == 0 {
+        ((z >> 1) as i64, nb_read)
+    } else {
+        (!(z >> 1) as i64, nb_read)
+    })
+}
+
+fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
+    let mut i = 0u64;
+    let mut buf = [0u8; 1];
+
+    let mut j = 0;
+    loop {
+        if j > 9 {
+            // if j * 7 > 64
+            return Err(de::Error::custom(
+                "overflow when decoding zigzag integer value",
+            ));
+        }
+        reader.read_exact(&mut buf[..])?;
+        i |= (u64::from(buf[0] & 0x7F)) << (j * 7);
+        j += 1;
+        if (buf[0] >> 7) == 0 {
+            break;
+        }
+    }
+
+    Ok((i, j))
 }
