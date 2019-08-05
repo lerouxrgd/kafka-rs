@@ -3,7 +3,7 @@ use std::net::TcpStream;
 
 use kafka_protocol::codec::{encode_req, read_resp, Deserializer};
 use kafka_protocol::model::*;
-use kafka_protocol::types::{Batch, NullableBytes, NullableString, Record, RecordBatch};
+use kafka_protocol::types::*;
 
 // TODO: handle decoding empty response (server error) which leads to SO on the client
 

@@ -166,3 +166,49 @@ pub enum TimestampType {
     CreateTime,
     LogAppendTime,
 }
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum MessageSet {
+    V0 {
+        offset: i64,
+        message_size: i32,
+        message: message_set::v0::Message,
+    },
+    V1 {
+        offset: i64,
+        message_size: i32,
+        message: message_set::v1::Message,
+    },
+}
+
+pub mod message_set {
+    pub mod v0 {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        pub struct Message {
+            pub crc: u32,
+            pub magic_byte: i8,
+            pub attributes: i8,
+            pub key: crate::types::NullableBytes,
+            pub value: crate::types::NullableBytes,
+        }
+
+    }
+    pub mod v1 {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        pub struct Message {
+            pub crc: u32,
+            pub magic_byte: i8,
+            pub attributes: i8,
+            pub timestamp: i64,
+            pub key: crate::types::NullableBytes,
+            pub value: crate::types::NullableBytes,
+        }
+
+    }
+}
