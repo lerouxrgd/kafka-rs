@@ -23,7 +23,7 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    decode_resp::<T>(&mut bytes, version)
+    decode_resp::<T>(&bytes, version)
 }
 
 pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
@@ -35,12 +35,12 @@ where
     let header = HeaderResponse::deserialize(&mut deserializer)?;
     let resp = T::deserialize(&mut deserializer)?;
 
-    if !deserializer.has_more() {
+    if deserializer.len() == 0 {
         Ok((header, resp))
     } else {
         Err(de::Error::custom(format!(
             "{} bytes remaining",
-            deserializer.input.len()
+            deserializer.len()
         )))
     }
 }
@@ -61,8 +61,8 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    pub fn has_more(&self) -> bool {
-        self.input.len() != 0
+    pub fn len(&self) -> usize {
+        self.input.len()
     }
 }
 

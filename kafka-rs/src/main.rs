@@ -94,9 +94,9 @@ fn wip_requests() -> std::io::Result<()> {
 
             let mut deserializer = Deserializer::from_bytes(&bytes, 0);
 
-            while deserializer.has_more() {
+            while deserializer.len() != 0 {
                 let batch = RecordBatch::deserialize(&mut deserializer).unwrap();
-                // println!(">>>>>>>> {:#?}", batch);
+                println!(">>>>>>>> {:?}", batch);
 
                 match &batch.records[0] {
                     Record::Batch(Batch { value, .. }) => {
