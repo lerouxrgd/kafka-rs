@@ -64,6 +64,47 @@ impl<'de> Deserializer<'de> {
     pub fn len(&self) -> usize {
         self.input.len()
     }
+
+    /// Infer and set Record variant from the raw bytes of the current input
+    /// corresponding to at least one RecordBatch.
+    pub fn prepare_record(&mut self) -> Result<()> {
+        // RecordBatch first bytes are:
+        //   base_offset: i64,
+        //   batch_length: i32,
+        //   partition_leader_epoch: i32,
+        //   magic: i8,
+        //   crc: i32,
+        //   attributes: i16,
+        //   ...
+        // and the part of attributes we're interested in is in the first byte
+        // so we end up with this formula to find the byte position:
+        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+
+        if self.input.len() < byte_pos {
+            return Err(de::Error::custom("Not enough bytes to infer record type"));
+        }
+
+        // 0 -> Record::Batch
+        // 1 -> Record::Control
+        self.struct_variant = ((self.input[byte_pos - 1] >> 5) & 1) as usize;
+        Ok(())
+    }
+}
+
+trait Variant {
+    fn variant(&self) -> usize;
+}
+
+impl<'de, T: de::Deserializer<'de>> Variant for T {
+    default fn variant(&self) -> usize {
+        0
+    }
+}
+
+impl<'de> Variant for &mut Deserializer<'de> {
+    fn variant(&self) -> usize {
+        self.struct_variant
+    }
 }
 
 impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
@@ -831,48 +872,12 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     Ok((i, j))
 }
 
-trait InferRecord {
-    fn record_variant(&self) -> usize;
-}
-
-impl<'de, T: de::Deserializer<'de>> InferRecord for T {
-    default fn record_variant(&self) -> usize {
-        0
-    }
-}
-
-impl<'de> InferRecord for Deserializer<'de> {
-    /// 0 -> Record::Batch
-    /// 1 -> Record::Control
-    fn record_variant(&self) -> usize {
-        // TODO: return Result<usize, de:Error> ?
-
-        // RecordBatch first bytes are:
-        //  base_offset: i64,
-        //  batch_length: i32,
-        //  partition_leader_epoch: i32,
-        //  magic: i8,
-        //  crc: i32,
-        //  attributes: i16,
-        //  ...
-        // and the part of attributes we're interested in is in the first byte
-        // so we end up with this formula to find the byte position:
-        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
-
-        if self.input.len() < byte_pos {
-            return 0;
-        }
-
-        ((self.input[byte_pos - 1] >> 5) & 1) as usize
-    }
-}
-
 impl<'de> Deserialize<'de> for Record {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Record, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        match deserializer.record_variant() {
+        match deserializer.variant() {
             0 => Ok(Record::Batch(Batch::deserialize(deserializer)?)),
             1 => Ok(Record::Control(Control::deserialize(deserializer)?)),
             x => Err(de::Error::custom(format!("unknown record variant: {}", x))),
