@@ -10,8 +10,7 @@ use serde::de::{
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
 use crate::types::{
-    Batch, Bytes, HeaderRecord, NullableBytes, NullableString,
-    Varint, Varlong,
+    Batch, Bytes, Control, HeaderRecord, NullableBytes, NullableString, Record, Varint, Varlong,
 };
 
 pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
@@ -24,8 +23,7 @@ where
     let size = i32::from_be_bytes(buf);
     let mut bytes = vec![0; size as usize];
     rdr.read_exact(&mut bytes)?;
-    let (a, b) = decode_resp::<T>(&mut bytes, version)?;
-    Ok((a, b))
+    decode_resp::<T>(&mut bytes, version)
 }
 
 pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
@@ -37,7 +35,7 @@ where
     let header = HeaderResponse::deserialize(&mut deserializer)?;
     let resp = T::deserialize(&mut deserializer)?;
 
-    if deserializer.input.len() == 0 {
+    if !deserializer.has_more() {
         Ok((header, resp))
     } else {
         Err(de::Error::custom(format!(
@@ -63,32 +61,8 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    pub fn get_rest(&self) -> &[u8] {
-        self.input
-    }
-
-    /// 0 -> Record::Batch
-    /// 1 -> Record::Control
-    fn record_variant(&self) -> usize {
-        // TODO: return Result<usize, de:Error> ?
-
-        // RecordBatch first bytes are:
-        //  base_offset: i64,
-        //  batch_length: i32,
-        //  partition_leader_epoch: i32,
-        //  magic: i8,
-        //  crc: i32,
-        //  attributes: i16,
-        //  ...
-        // and the part of attributes we're interested in is in the first byte
-        // so we end up with this formula to find the byte position:
-        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
-
-        if self.input.len() < byte_pos {
-            return 0;
-        }
-
-        ((self.input[byte_pos - 1] >> 5) & 1) as usize
+    pub fn has_more(&self) -> bool {
+        self.input.len() != 0
     }
 }
 
@@ -172,15 +146,13 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // TODO: not needed ?
+        // TODO: only used for vanilla Vec<u8>, make dedicated RawBytes instead ?
         if self.input.len() < 1 {
             return Err(de::Error::custom("not enough bytes to deserialize u8"));
         }
         let (val, rest) = self.input.split_at(1);
         self.input = rest;
-        let mut bytes = [0u8; 1];
-        bytes.copy_from_slice(val);
-        visitor.visit_u8(u8::from_be_bytes(bytes))
+        visitor.visit_u8(val[0])
     }
 
     fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
@@ -276,7 +248,6 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         let c = visitor.consumed();
         let val = visitor.visit_bytes(self.input);
         let (_, rest) = self.input.split_at(*c.borrow());
-        println!("rest {:?}", rest);
         self.input = rest;
         val
     }
@@ -309,11 +280,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         unimplemented!()
     }
 
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_newtype_struct(self)
+        unimplemented!()
     }
 
     fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
@@ -361,22 +332,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_struct<V>(
         mut self,
-        name: &'static str,
+        _name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        if name == "RecordBatch" {
-            let curr_version = self.struct_variant;
-            self.struct_variant = self.record_variant();
-            let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
-            self.struct_variant = curr_version;
-            res
-        } else {
-            visitor.visit_map(StructDeserializer::new(&mut self, fields))
-        }
+        visitor.visit_map(StructDeserializer::new(&mut self, fields))
     }
 
     fn deserialize_enum<V>(
@@ -446,7 +409,7 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
         T: DeserializeSeed<'de>,
     {
         if self.len > 0 {
-            self.len = self.len - 1;
+            self.len -= 1;
             seed.deserialize(&mut *self.de).map(Some)
         } else {
             Ok(None)
@@ -523,12 +486,11 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
         unimplemented!()
     }
 
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
+    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value>
     where
         T: DeserializeSeed<'de>,
     {
-        let val = seed.deserialize(&mut *self.de)?;
-        Ok(val)
+        unimplemented!()
     }
 
     fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
@@ -542,7 +504,6 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     where
         V: Visitor<'de>,
     {
-        println!("youhou");
         for field in fields {
             self.de.identifiers.push(field);
         }
@@ -829,148 +790,6 @@ impl<'de> Deserialize<'de> for Varlong {
     }
 }
 
-impl<'de> Deserialize<'de> for Batch {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct BatchVisitor {
-            nb_read: Rc<RefCell<usize>>,
-        }
-
-        impl Consumed for BatchVisitor {
-            fn consumed(&self) -> Rc<RefCell<usize>> {
-                self.nb_read.clone()
-            }
-        }
-
-        impl<'de> Visitor<'de> for BatchVisitor {
-            type Value = Batch;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a batch")
-            }
-
-            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if bytes.len() < 1 {
-                    return Err(de::Error::custom("not enough bytes to deserialize Batch"));
-                }
-
-                let mut rdr = std::io::Cursor::new(bytes);
-                let (length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-
-                if bytes.len() < (length as usize + nb_read) {
-                    return Err(de::Error::custom("not enough bytes to deserialize Batch"));
-                }
-
-                let nb_to_read = length as usize + nb_read;
-                let mut actual_nb_read = nb_read;
-
-                let mut buf = [0u8; 1];
-                rdr.read_exact(&mut buf); // TODO: handle error
-                let attributes = i8::from_be_bytes(buf);
-                actual_nb_read += 1;
-
-                let (timestamp_delta, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                actual_nb_read += nb_read;
-
-                let (offset_delta, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                actual_nb_read += nb_read;
-
-                let (key_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                actual_nb_read += nb_read;
-
-                let mut key: Vec<u8> = Vec::new(); 
-                if key_length != -1 {
-                    for _i in 0..key_length  {
-                        let mut buf = [0u8; 1];
-                        rdr.read_exact(&mut buf); // TODO: handle error
-                        key.push(buf[0]);
-                        actual_nb_read += 1;
-                    }
-                }
-
-                let (value_len, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                actual_nb_read += nb_read;
-
-                let mut value: Vec<u8> = Vec::new(); 
-                if value_len != -1 {
-                    for _i in 0..value_len  {
-                        let mut buf = [0u8; 1];
-                        rdr.read_exact(&mut buf); // TODO: handle error
-                        value.push(buf[0]);
-                        actual_nb_read += 1;
-                    }
-                }
-
-                let (header_len, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                actual_nb_read += nb_read;
-
-                let mut headers: Vec<HeaderRecord> = Vec::new(); 
-                if header_len != -1 {
-                    for _i in 0..header_len  {
-                        let (header_key_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                        actual_nb_read += nb_read;
-
-                        let mut header_key = String::from("");
-                        if header_key_length != -1 {
-                            let mut buf = vec![0u8; header_key_length as usize];
-                            rdr.read_exact(&mut buf); // TODO: handle error
-                            header_key = String::from_utf8(buf).map_err(de::Error::custom)?;
-                            actual_nb_read += header_key_length as usize;
-                        }
-
-                        let (header_value_length, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
-                        actual_nb_read += nb_read;
-                        let mut header_value: Vec<u8> = Vec::new();
-                        if header_value_length != -1 {
-                            for _i in 0..header_value_length {
-                                let mut buf = [0u8; 1];
-                                rdr.read_exact(&mut buf); // TODO: handle error
-                                header_value.push(buf[0]);
-                                actual_nb_read += 1;
-                            }
-                        }
-
-                        headers.push(HeaderRecord {
-                            key_length: Varint(header_key_length),
-                            key: header_key,
-                            value_length: Varint(header_value_length),
-                            value: header_value,
-                        });
-                    }
-                }
-
-                if actual_nb_read != nb_to_read {
-                    return Err(de::Error::custom("batch length does not match number of bytes read"));
-                }
-                *self.nb_read.borrow_mut() = length as usize + nb_read;
-
-                Ok(Batch {
-                    length: Varint(length),
-                    attributes,
-                    timestamp_delta: Varint(timestamp_delta),
-                    offset_delta: Varint(offset_delta),
-                    key_length: Varint(key_length),
-                    key,
-                    value_len: Varint(value_len),
-                    value,
-                    header_len: Varint(header_len),
-                    headers,
-                })
-            }
-        }
-
-        deserializer.deserialize_bytes(BatchVisitor {
-            nb_read: Rc::new(RefCell::new(0)),
-        })
-
-    }
-}
-
 pub(crate) fn zag_i32<R: Read>(reader: &mut R) -> Result<(i32, usize)> {
     let (i, nb_read) = zag_i64(reader)?;
     if i < i64::from(i32::min_value()) || i > i64::from(i32::max_value()) {
@@ -1010,4 +829,196 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     }
 
     Ok((i, j))
+}
+
+trait InferRecord {
+    fn record_variant(&self) -> usize;
+}
+
+impl<'de, T: de::Deserializer<'de>> InferRecord for T {
+    default fn record_variant(&self) -> usize {
+        0
+    }
+}
+
+impl<'de> InferRecord for Deserializer<'de> {
+    /// 0 -> Record::Batch
+    /// 1 -> Record::Control
+    fn record_variant(&self) -> usize {
+        // TODO: return Result<usize, de:Error> ?
+
+        // RecordBatch first bytes are:
+        //  base_offset: i64,
+        //  batch_length: i32,
+        //  partition_leader_epoch: i32,
+        //  magic: i8,
+        //  crc: i32,
+        //  attributes: i16,
+        //  ...
+        // and the part of attributes we're interested in is in the first byte
+        // so we end up with this formula to find the byte position:
+        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+
+        if self.input.len() < byte_pos {
+            return 0;
+        }
+
+        ((self.input[byte_pos - 1] >> 5) & 1) as usize
+    }
+}
+
+impl<'de> Deserialize<'de> for Record {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Record, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        match deserializer.record_variant() {
+            0 => Ok(Record::Batch(Batch::deserialize(deserializer)?)),
+            1 => Ok(Record::Control(Control::deserialize(deserializer)?)),
+            x => Err(de::Error::custom(format!("unknown record variant: {}", x))),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Batch {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const NAME: &'static str = "Batch";
+        const FIELDS: &'static [&'static str] = &[
+            "length",
+            "attributes",
+            "timestamp_delta",
+            "offset_delta",
+            "key_length",
+            "key",
+            "value_len",
+            "value",
+            "header_len",
+            "headers",
+        ];
+
+        struct BatchVisitor;
+
+        impl<'de> Visitor<'de> for BatchVisitor {
+            type Value = Batch;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "kafka record batch")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let length: Option<Varint>;
+                let attributes: Option<i8>;
+                let timestamp_delta: Option<Varint>;
+                let offset_delta: Option<Varint>;
+                let key_length: Option<Varint>;
+                let key: Option<Vec<u8>>;
+                let value_len: Option<Varint>;
+                let value: Option<Vec<u8>>;
+                let header_len: Option<Varint>;
+                let headers: Option<Vec<HeaderRecord>>;
+
+                length = map.next_value::<Varint>().map(Some)?;
+                attributes = map.next_value::<i8>().map(Some)?;
+                timestamp_delta = map.next_value::<Varint>().map(Some)?;
+                offset_delta = map.next_value::<Varint>().map(Some)?;
+
+                key_length = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**key_length.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                key = Some(buf);
+
+                value_len = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**value_len.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                value = Some(buf);
+
+                header_len = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**header_len.as_ref().unwrap() {
+                    buf.push(map.next_value::<HeaderRecord>()?);
+                }
+                headers = Some(buf);
+
+                let batch = Batch {
+                    length: length.unwrap(),
+                    attributes: attributes.unwrap(),
+                    timestamp_delta: timestamp_delta.unwrap(),
+                    offset_delta: offset_delta.unwrap(),
+                    key_length: key_length.unwrap(),
+                    key: key.unwrap(),
+                    value_len: value_len.unwrap(),
+                    value: value.unwrap(),
+                    header_len: header_len.unwrap(),
+                    headers: headers.unwrap(),
+                };
+
+                Ok(batch)
+            }
+        }
+
+        deserializer.deserialize_struct(NAME, FIELDS, BatchVisitor)
+    }
+}
+
+impl<'de> Deserialize<'de> for HeaderRecord {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<HeaderRecord, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const NAME: &'static str = "HeaderRecord";
+        const FIELDS: &'static [&'static str] = &["key_length", "key", "value_length", "value"];
+
+        struct HeaderRecordVisitor;
+
+        impl<'de> Visitor<'de> for HeaderRecordVisitor {
+            type Value = HeaderRecord;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "kafka record header")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let key_length: Option<Varint>;
+                let key: Option<String>;
+                let value_length: Option<Varint>;
+                let value: Option<Vec<u8>>;
+
+                key_length = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**key_length.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                key = Some(String::from_utf8(buf).map_err(de::Error::custom)?);
+
+                value_length = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**value_length.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                value = Some(buf);
+
+                Ok(HeaderRecord {
+                    key_length: key_length.unwrap(),
+                    key: key.unwrap(),
+                    value_length: value_length.unwrap(),
+                    value: value.unwrap(),
+                })
+            }
+        }
+
+        deserializer.deserialize_struct(NAME, FIELDS, HeaderRecordVisitor)
+    }
 }

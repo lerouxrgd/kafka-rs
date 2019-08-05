@@ -1,5 +1,4 @@
 use std::ops::Deref;
-use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NullableString(pub Option<String>);
@@ -64,7 +63,7 @@ impl Deref for NullableBytes {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
 pub struct RecordBatch {
     pub base_offset: i64,
@@ -82,29 +81,32 @@ pub struct RecordBatch {
     pub records: Vec<Record>,
 }
 
-// TODO: some Renaming would be nice
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum Record {
     Batch(Batch),
     Control(Control),
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct Batch {
     pub length: Varint,
     pub attributes: i8,
     pub timestamp_delta: Varint,
     pub offset_delta: Varint,
-    pub key_length: Varint ,
+    pub key_length: Varint,
     pub key: Vec<u8>,
     pub value_len: Varint,
     pub value: Vec<u8>,
-    pub header_len: Varint, // https://github.com/apache/kafka/blob/3cdc78e6bb1f83973a14ce1550fe3874f7348b05/clients/src/main/java/org/apache/kafka/common/record/DefaultRecord.java#L209
+    pub header_len: Varint,
     pub headers: Vec<HeaderRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+pub struct HeaderRecord {
+    pub key_length: Varint,
+    pub key: String,
+    pub value_length: Varint,
+    pub value: Vec<u8>,
 }
 
 #[derive(
@@ -113,16 +115,6 @@ pub struct Batch {
 pub struct Control {
     pub version: i16,
     pub r#type: i16,
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
-)]
-pub struct HeaderRecord {
-    pub key_length: Varint,
-    pub key: String,
-    pub value_length: Varint,
-    pub value: Vec<u8>,
 }
 
 impl RecordBatch {
