@@ -63,7 +63,7 @@ impl Deref for NullableBytes {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
 pub struct RecordBatch {
     pub base_offset: i64,
@@ -81,35 +81,40 @@ pub struct RecordBatch {
     pub records: Vec<Record>,
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum Record {
-    Batch {
-        length: Varint,
-        attributes: i8,
-        timestamp_delta: Varint,
-        offset_delta: Varint,
-        key_length: Varint,
-        key: Vec<u8>,
-        value_len: Varint,
-        value: Vec<u8>,
-        headers: Vec<HeaderRecord>,
-    },
-    Control {
-        version: i16,
-        r#type: i16,
-    },
+    Batch(Batch),
+    Control(Control),
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+pub struct Batch {
+    pub length: Varint,
+    pub attributes: i8,
+    pub timestamp_delta: Varint,
+    pub offset_delta: Varint,
+    pub key_length: Varint,
+    pub key: Vec<u8>,
+    pub value_len: Varint,
+    pub value: Vec<u8>,
+    pub header_len: Varint,
+    pub headers: Vec<HeaderRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct HeaderRecord {
     pub key_length: Varint,
     pub key: String,
     pub value_length: Varint,
     pub value: Vec<u8>,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
+pub struct Control {
+    pub version: i16,
+    pub r#type: i16,
 }
 
 impl RecordBatch {
@@ -160,4 +165,50 @@ pub enum Compression {
 pub enum TimestampType {
     CreateTime,
     LogAppendTime,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum MessageSet {
+    V0 {
+        offset: i64,
+        message_size: i32,
+        message: message_set::v0::Message,
+    },
+    V1 {
+        offset: i64,
+        message_size: i32,
+        message: message_set::v1::Message,
+    },
+}
+
+pub mod message_set {
+    pub mod v0 {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        pub struct Message {
+            pub crc: u32,
+            pub magic_byte: i8,
+            pub attributes: i8,
+            pub key: crate::types::NullableBytes,
+            pub value: crate::types::NullableBytes,
+        }
+
+    }
+    pub mod v1 {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        pub struct Message {
+            pub crc: u32,
+            pub magic_byte: i8,
+            pub attributes: i8,
+            pub timestamp: i64,
+            pub key: crate::types::NullableBytes,
+            pub value: crate::types::NullableBytes,
+        }
+
+    }
 }

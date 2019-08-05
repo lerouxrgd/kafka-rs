@@ -9,7 +9,9 @@ use serde::de::{
 
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
-use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
+use crate::types::{
+    Batch, Bytes, Control, HeaderRecord, NullableBytes, NullableString, Record, Varint, Varlong,
+};
 
 pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
 where
@@ -33,12 +35,12 @@ where
     let header = HeaderResponse::deserialize(&mut deserializer)?;
     let resp = T::deserialize(&mut deserializer)?;
 
-    if deserializer.input.len() == 0 {
+    if deserializer.len() == 0 {
         Ok((header, resp))
     } else {
         Err(de::Error::custom(format!(
             "{} bytes remaining",
-            deserializer.input.len()
+            deserializer.len()
         )))
     }
 }
@@ -59,28 +61,49 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    /// 0 -> Record::Batch
-    /// 1 -> Record::Control
-    fn record_variant(&self) -> usize {
-        // TODO: return Result<usize, de:Error> ?
+    pub fn len(&self) -> usize {
+        self.input.len()
+    }
 
+    /// Infer and set Record variant from the raw bytes of the current input
+    /// corresponding to at least one RecordBatch.
+    pub fn prepare_record(&mut self) -> Result<()> {
         // RecordBatch first bytes are:
-        //  base_offset: i64,
-        //  batch_length: i32,
-        //  partition_leader_epoch: i32,
-        //  magic: i8,
-        //  crc: i32,
-        //  attributes: i16,
-        //  ...
+        //   base_offset: i64,
+        //   batch_length: i32,
+        //   partition_leader_epoch: i32,
+        //   magic: i8,
+        //   crc: i32,
+        //   attributes: i16,
+        //   ...
         // and the part of attributes we're interested in is in the first byte
         // so we end up with this formula to find the byte position:
         let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
 
         if self.input.len() < byte_pos {
-            return 0;
+            return Err(de::Error::custom("Not enough bytes to infer record type"));
         }
 
-        ((self.input[byte_pos - 1] >> 5) & 1) as usize
+        // 0 -> Record::Batch
+        // 1 -> Record::Control
+        self.struct_variant = ((self.input[byte_pos - 1] >> 5) & 1) as usize;
+        Ok(())
+    }
+}
+
+trait Variant {
+    fn variant(&self) -> usize;
+}
+
+impl<'de, T: de::Deserializer<'de>> Variant for T {
+    default fn variant(&self) -> usize {
+        0
+    }
+}
+
+impl<'de> Variant for &mut Deserializer<'de> {
+    fn variant(&self) -> usize {
+        self.struct_variant
     }
 }
 
@@ -164,15 +187,13 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // TODO: not needed ?
+        // TODO: only used for vanilla Vec<u8>, make dedicated RawBytes instead ?
         if self.input.len() < 1 {
             return Err(de::Error::custom("not enough bytes to deserialize u8"));
         }
         let (val, rest) = self.input.split_at(1);
         self.input = rest;
-        let mut bytes = [0u8; 1];
-        bytes.copy_from_slice(val);
-        visitor.visit_u8(u8::from_be_bytes(bytes))
+        visitor.visit_u8(val[0])
     }
 
     fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
@@ -352,22 +373,14 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_struct<V>(
         mut self,
-        name: &'static str,
+        _name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        if name == "RecordBatch" {
-            let curr_version = self.struct_variant;
-            self.struct_variant = self.record_variant();
-            let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
-            self.struct_variant = curr_version;
-            res
-        } else {
-            visitor.visit_map(StructDeserializer::new(&mut self, fields))
-        }
+        visitor.visit_map(StructDeserializer::new(&mut self, fields))
     }
 
     fn deserialize_enum<V>(
@@ -437,7 +450,7 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
         T: DeserializeSeed<'de>,
     {
         if self.len > 0 {
-            self.len = self.len - 1;
+            self.len -= 1;
             seed.deserialize(&mut *self.de).map(Some)
         } else {
             Ok(None)
@@ -730,7 +743,6 @@ impl<'de> Deserialize<'de> for NullableString {
         })
     }
 }
-
 impl<'de> Deserialize<'de> for Varint {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
     where
@@ -858,4 +870,160 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     }
 
     Ok((i, j))
+}
+
+impl<'de> Deserialize<'de> for Record {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Record, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        match deserializer.variant() {
+            0 => Ok(Record::Batch(Batch::deserialize(deserializer)?)),
+            1 => Ok(Record::Control(Control::deserialize(deserializer)?)),
+            x => Err(de::Error::custom(format!("unknown record variant: {}", x))),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Batch {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const NAME: &'static str = "Batch";
+        const FIELDS: &'static [&'static str] = &[
+            "length",
+            "attributes",
+            "timestamp_delta",
+            "offset_delta",
+            "key_length",
+            "key",
+            "value_len",
+            "value",
+            "header_len",
+            "headers",
+        ];
+
+        struct BatchVisitor;
+
+        impl<'de> Visitor<'de> for BatchVisitor {
+            type Value = Batch;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "kafka record batch")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let length: Option<Varint>;
+                let attributes: Option<i8>;
+                let timestamp_delta: Option<Varint>;
+                let offset_delta: Option<Varint>;
+                let key_length: Option<Varint>;
+                let key: Option<Vec<u8>>;
+                let value_len: Option<Varint>;
+                let value: Option<Vec<u8>>;
+                let header_len: Option<Varint>;
+                let headers: Option<Vec<HeaderRecord>>;
+
+                length = map.next_value::<Varint>().map(Some)?;
+                attributes = map.next_value::<i8>().map(Some)?;
+                timestamp_delta = map.next_value::<Varint>().map(Some)?;
+                offset_delta = map.next_value::<Varint>().map(Some)?;
+
+                key_length = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**key_length.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                key = Some(buf);
+
+                value_len = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**value_len.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                value = Some(buf);
+
+                header_len = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**header_len.as_ref().unwrap() {
+                    buf.push(map.next_value::<HeaderRecord>()?);
+                }
+                headers = Some(buf);
+
+                let batch = Batch {
+                    length: length.unwrap(),
+                    attributes: attributes.unwrap(),
+                    timestamp_delta: timestamp_delta.unwrap(),
+                    offset_delta: offset_delta.unwrap(),
+                    key_length: key_length.unwrap(),
+                    key: key.unwrap(),
+                    value_len: value_len.unwrap(),
+                    value: value.unwrap(),
+                    header_len: header_len.unwrap(),
+                    headers: headers.unwrap(),
+                };
+
+                Ok(batch)
+            }
+        }
+
+        deserializer.deserialize_struct(NAME, FIELDS, BatchVisitor)
+    }
+}
+
+impl<'de> Deserialize<'de> for HeaderRecord {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<HeaderRecord, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        const NAME: &'static str = "HeaderRecord";
+        const FIELDS: &'static [&'static str] = &["key_length", "key", "value_length", "value"];
+
+        struct HeaderRecordVisitor;
+
+        impl<'de> Visitor<'de> for HeaderRecordVisitor {
+            type Value = HeaderRecord;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "kafka record header")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let key_length: Option<Varint>;
+                let key: Option<String>;
+                let value_length: Option<Varint>;
+                let value: Option<Vec<u8>>;
+
+                key_length = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**key_length.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                key = Some(String::from_utf8(buf).map_err(de::Error::custom)?);
+
+                value_length = map.next_value::<Varint>().map(Some)?;
+                let mut buf = vec![];
+                for _ in 0..**value_length.as_ref().unwrap() {
+                    buf.push(map.next_value::<u8>()?);
+                }
+                value = Some(buf);
+
+                Ok(HeaderRecord {
+                    key_length: key_length.unwrap(),
+                    key: key.unwrap(),
+                    value_length: value_length.unwrap(),
+                    value: value.unwrap(),
+                })
+            }
+        }
+
+        deserializer.deserialize_struct(NAME, FIELDS, HeaderRecordVisitor)
+    }
 }
