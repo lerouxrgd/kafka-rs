@@ -78,13 +78,29 @@ pub struct RecordBatch {
     pub producer_id: i64,
     pub producer_epoch: i16,
     pub base_sequence: i32,
-    pub records: Vec<Record>,
+    pub records_len: i32,
+    pub records: Records,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+pub enum Records {
+    Uncompressed(Vec<Record>),
+    Gzip(Vec<Record>),
+    Snappy(Vec<Record>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum Record {
     Batch(Batch),
     Control(Control),
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
+pub struct Control {
+    pub version: i16,
+    pub r#type: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
@@ -109,24 +125,9 @@ pub struct HeaderRecord {
     pub value: Vec<u8>,
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
-)]
-pub struct Control {
-    pub version: i16,
-    pub r#type: i16,
-}
-
 impl RecordBatch {
     pub fn compression(&self) -> Compression {
-        match self.attributes & 7 {
-            0 => Compression::NoCompression,
-            1 => Compression::Gzip,
-            2 => Compression::Snappy,
-            3 => Compression::Lz4,
-            4 => Compression::Zstd,
-            _ => Compression::Unknown,
-        }
+        Compression::from_attr(self.attributes)
     }
 
     pub fn timestamp_type(&self) -> TimestampType {
@@ -153,12 +154,31 @@ impl RecordBatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Compression {
-    NoCompression,
+    None,
     Gzip,
     Snappy,
     Lz4,
     Zstd,
     Unknown,
+}
+
+impl Compression {
+    pub fn from_attr(attributes: i16) -> Self {
+        match attributes & 7 {
+            0 => Compression::None,
+            1 => Compression::Gzip,
+            2 => Compression::Snappy,
+            3 => Compression::Lz4,
+            4 => Compression::Zstd,
+            _ => Compression::Unknown,
+        }
+    }
+}
+
+impl Default for Compression {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

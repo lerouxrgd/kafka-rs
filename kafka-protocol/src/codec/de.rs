@@ -9,9 +9,7 @@ use serde::de::{
 
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
-use crate::types::{
-    Batch, Bytes, Control, HeaderRecord, NullableBytes, NullableString, Record, Varint, Varlong,
-};
+use crate::types::*;
 
 pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
 where
@@ -45,11 +43,13 @@ where
     }
 }
 
+// TODO: double check what need to be pub(crate)
 #[derive(Debug)]
 pub struct Deserializer<'de> {
     pub(crate) input: &'de [u8],
     pub(crate) identifiers: Vec<&'de str>,
     pub(crate) struct_variant: usize,
+    record_attributes: Option<Attributes>,
 }
 
 impl<'de> Deserializer<'de> {
@@ -58,16 +58,42 @@ impl<'de> Deserializer<'de> {
             input,
             identifiers: vec![],
             struct_variant: version,
+            record_attributes: None,
         }
     }
 
     pub fn len(&self) -> usize {
         self.input.len()
     }
+}
 
-    /// Infer and set Record variant from the raw bytes of the current input
-    /// corresponding to at least one RecordBatch.
-    pub fn prepare_record(&mut self) -> Result<()> {
+#[derive(Debug)]
+struct Attributes {
+    compression: Compression,
+    is_control: bool,
+    rec_length: i32,
+}
+
+trait PrepareRecord {
+    fn prepare_record(&mut self) -> Result<()>; // TODO: can be a simple Deserializer method
+    fn record_attributes(&self) -> &Attributes;
+}
+
+impl<'de, D> PrepareRecord for D
+where
+    D: de::Deserializer<'de>,
+{
+    default fn prepare_record(&mut self) -> Result<()> {
+        unimplemented!()
+    }
+
+    default fn record_attributes(&self) -> &Attributes {
+        unimplemented!()
+    }
+}
+
+impl<'de> PrepareRecord for &mut Deserializer<'de> {
+    fn prepare_record(&mut self) -> Result<()> {
         // RecordBatch first bytes are:
         //   base_offset: i64,
         //   batch_length: i32,
@@ -76,34 +102,47 @@ impl<'de> Deserializer<'de> {
         //   crc: i32,
         //   attributes: i16,
         //   ...
-        // and the part of attributes we're interested in is in the first byte
-        // so we end up with this formula to find the byte position:
-        let byte_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+        // so we end up with this formula to find the attributes first byte position:
+        let attr_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
 
-        if self.input.len() < byte_pos {
-            return Err(de::Error::custom("Not enough bytes to infer record type"));
+        // attr is i16 (2 bytes) therefore current input length must be at least `attr_pos`
+        if self.input.len() < attr_pos + 1 {
+            return Err(de::Error::custom(
+                "Not enough bytes to inspect RecordBatch attributes",
+            ));
         }
 
-        // 0 -> Record::Batch
-        // 1 -> Record::Control
-        self.struct_variant = ((self.input[byte_pos - 1] >> 5) & 1) as usize;
+        let mut attr_bytes = [0u8; 2];
+        attr_bytes.copy_from_slice(&self.input[attr_pos..attr_pos + 2]);
+        let attr = i16::from_be_bytes(attr_bytes);
+
+        // Similarly we look for RecordBatch { .., records_len, .. } position
+        let rec_length_pos = (64 + 32 + 32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
+        if self.input.len() < rec_length_pos + 3 {
+            return Err(de::Error::custom(
+                "Not enough bytes to inspect RecordBatch records' length",
+            ));
+        }
+
+        let mut rec_length_bytes = [0u8; 4];
+        rec_length_bytes.copy_from_slice(&self.input[attr_pos..attr_pos + 4]);
+        let rec_length = i32::from_be_bytes(rec_length_bytes);
+
+        let is_control = ((attr >> 5) & 1) == 1; // attributes bit 5 == 1
+        let compression = Compression::from_attr(attr);
+        self.record_attributes = Some(Attributes {
+            is_control,
+            compression,
+            rec_length,
+        });
+
         Ok(())
     }
-}
 
-trait Variant {
-    fn variant(&self) -> usize;
-}
-
-impl<'de, T: de::Deserializer<'de>> Variant for T {
-    default fn variant(&self) -> usize {
-        0
-    }
-}
-
-impl<'de> Variant for &mut Deserializer<'de> {
-    fn variant(&self) -> usize {
-        self.struct_variant
+    fn record_attributes(&self) -> &Attributes {
+        self.record_attributes
+            .as_ref()
+            .expect("Attributes haven't been set")
     }
 }
 
@@ -332,17 +371,26 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 4 {
-            return Err(de::Error::custom(
-                "not enough bytes to deserialize seq size (i32)",
-            ));
+        if self.record_attributes.is_none() {
+            if self.input.len() < 4 {
+                return Err(de::Error::custom(
+                    "not enough bytes to deserialize seq size (i32)",
+                ));
+            }
+            let (val, rest) = self.input.split_at(4);
+            self.input = rest;
+            let mut bytes = [0u8; 4];
+            bytes.copy_from_slice(val);
+            let len = i32::from_be_bytes(bytes);
+            visitor.visit_seq(SeqDeserializer::new(&mut self, len))
+        } else {
+            let len = self.record_attributes().rec_length;
+            let c = visitor.consumed();
+            let val = visitor.visit_seq(SeqDeserializer::new(&mut self, len)); // TODO: dedicated one
+            let (_, rest) = self.input.split_at(*c.borrow());
+            self.input = rest;
+            val
         }
-        let (val, rest) = self.input.split_at(4);
-        self.input = rest;
-        let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(val);
-        let len = i32::from_be_bytes(bytes);
-        visitor.visit_seq(SeqDeserializer::new(&mut self, len))
     }
 
     fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
@@ -373,13 +421,16 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_struct<V>(
         mut self,
-        _name: &'static str,
+        name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        if name == "RecordBatch" {
+            self.prepare_record()?;
+        }
         visitor.visit_map(StructDeserializer::new(&mut self, fields))
     }
 
@@ -872,15 +923,37 @@ fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
     Ok((i, j))
 }
 
+impl<'de> Deserialize<'de> for Records {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Records, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        // TODO: use batch_length to find the end?
+        match deserializer.record_attributes().compression {
+            Compression::None => {
+                // deserializer.deserialize_bytes(SomeCustomVisitor);
+
+                let mut records = vec![];
+                // for _ in 0..deserializer.record_attributes().rec_length {
+                //     records.push(Record::deserialize(deserializer)?);
+                // }
+
+                Ok(Records::Uncompressed(records))
+            }
+            _ => unimplemented!(), // TODO: implement
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for Record {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Record, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        match deserializer.variant() {
-            0 => Ok(Record::Batch(Batch::deserialize(deserializer)?)),
-            1 => Ok(Record::Control(Control::deserialize(deserializer)?)),
-            x => Err(de::Error::custom(format!("unknown record variant: {}", x))),
+        if deserializer.record_attributes().is_control {
+            Ok(Record::Control(Control::deserialize(deserializer)?))
+        } else {
+            Ok(Record::Batch(Batch::deserialize(deserializer)?))
         }
     }
 }
@@ -910,7 +983,7 @@ impl<'de> Deserialize<'de> for Batch {
             type Value = Batch;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "kafka record batch")
+                write!(formatter, "kafka batch")
             }
 
             fn visit_map<V>(self, mut map: V) -> std::result::Result<Self::Value, V::Error>
