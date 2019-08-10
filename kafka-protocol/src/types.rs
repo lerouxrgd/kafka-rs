@@ -83,10 +83,13 @@ pub struct RecordBatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
-pub enum Records {
-    Uncompressed(Vec<Record>),
-    Gzip(Vec<Record>),
-    Snappy(Vec<Record>),
+pub struct Records(pub Vec<Record>);
+
+impl Deref for Records {
+    type Target = Vec<Record>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]

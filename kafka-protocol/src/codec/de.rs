@@ -71,15 +71,18 @@ impl<'de> Deserializer<'de> {
 struct Attributes {
     compression: Compression,
     is_control: bool,
-    rec_length: i32,
+    records_len: i32,
+    batch_length: i32,
 }
 
-trait PrepareRecord {
+trait PrepareRecord<'de> {
     fn prepare_record(&mut self) -> Result<()>; // TODO: can be a simple Deserializer method
     fn record_attributes(&self) -> &Attributes;
+    fn get_input(&self) -> &[u8];
+    fn set_input(&mut self, input: &'de [u8]);
 }
 
-impl<'de, D> PrepareRecord for D
+impl<'de, D> PrepareRecord<'de> for D
 where
     D: de::Deserializer<'de>,
 {
@@ -90,50 +93,82 @@ where
     default fn record_attributes(&self) -> &Attributes {
         unimplemented!()
     }
+
+    default fn get_input(&self) -> &[u8] {
+        unimplemented!()
+    }
+
+    default fn set_input(&mut self, _input: &'de [u8]) {
+        unimplemented!()
+    }
 }
 
-impl<'de> PrepareRecord for &mut Deserializer<'de> {
+impl<'de> PrepareRecord<'de> for &mut Deserializer<'de> {
     fn prepare_record(&mut self) -> Result<()> {
-        // RecordBatch first bytes are:
-        //   base_offset: i64,
-        //   batch_length: i32,
-        //   partition_leader_epoch: i32,
-        //   magic: i8,
-        //   crc: i32,
-        //   attributes: i16,
-        //   ...
-        // so we end up with this formula to find the attributes first byte position:
-        let attr_pos = (64 + 32 + 32 + 8 + 32 + 16) / 8;
+        // pub struct RecordBatch {
+        //     pub base_offset: i64,
+        //     pub batch_length: i32,
+        //     pub partition_leader_epoch: i32,
+        //     pub magic: i8,
+        //     pub crc: u32,
+        //     pub attributes: i16,
+        //     pub last_offset_delta: i32,
+        //     pub first_timestamp: i64,
+        //     pub max_timestamp: i64,
+        //     pub producer_id: i64,
+        //     pub producer_epoch: i16,
+        //     pub base_sequence: i32,
+        //     pub records_len: i32,
+        //     pub records: Records,
+        // }
 
-        // attr is i16 (2 bytes) therefore current input length must be at least `attr_pos`
-        if self.input.len() < attr_pos + 1 {
+        // TODO: is `batch_length` needed ?
+
+        // Find `batch_length` first byte position
+        let batch_len_pos = (64 + 32) / 8;
+        if self.input.len() < batch_len_pos {
+            return Err(de::Error::custom(
+                "Not enough bytes to inspect RecordBatch batch_length",
+            ));
+        }
+        // Read `batch_length` from current raw input
+        let mut batch_len_bytes = [0u8; 4];
+        batch_len_bytes.copy_from_slice(&self.input[batch_len_pos - 4..batch_len_pos]);
+        let batch_length = i32::from_be_bytes(batch_len_bytes)
+            - (32 + 32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8
+            - 1;
+
+        // Find `attributes` first byte position
+        let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;
+        if self.input.len() < attr_pos {
             return Err(de::Error::custom(
                 "Not enough bytes to inspect RecordBatch attributes",
             ));
         }
-
+        // Read `attributes` from current raw input
         let mut attr_bytes = [0u8; 2];
-        attr_bytes.copy_from_slice(&self.input[attr_pos..attr_pos + 2]);
-        let attr = i16::from_be_bytes(attr_bytes);
+        attr_bytes.copy_from_slice(&self.input[attr_pos - 2..attr_pos]);
+        let attributes = i16::from_be_bytes(attr_bytes);
 
-        // Similarly we look for RecordBatch { .., records_len, .. } position
-        let rec_length_pos = (64 + 32 + 32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
-        if self.input.len() < rec_length_pos + 3 {
+        // Find `records_len` first byte position
+        let rec_len_pos = (8 * attr_pos + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
+        if self.input.len() < rec_len_pos {
             return Err(de::Error::custom(
-                "Not enough bytes to inspect RecordBatch records' length",
+                "Not enough bytes to inspect RecordBatch records_len",
             ));
         }
+        // Read `records_len` from current raw input
+        let mut rec_len_bytes = [0u8; 4];
+        rec_len_bytes.copy_from_slice(&self.input[rec_len_pos - 4..rec_len_pos]);
+        let records_len = i32::from_be_bytes(rec_len_bytes);
 
-        let mut rec_length_bytes = [0u8; 4];
-        rec_length_bytes.copy_from_slice(&self.input[attr_pos..attr_pos + 4]);
-        let rec_length = i32::from_be_bytes(rec_length_bytes);
-
-        let is_control = ((attr >> 5) & 1) == 1; // attributes bit 5 == 1
-        let compression = Compression::from_attr(attr);
+        let is_control = ((attributes >> 5) & 1) == 1; // attributes bit 5 == 1
+        let compression = Compression::from_attr(attributes);
         self.record_attributes = Some(Attributes {
             is_control,
             compression,
-            rec_length,
+            records_len,
+            batch_length,
         });
 
         Ok(())
@@ -143,6 +178,14 @@ impl<'de> PrepareRecord for &mut Deserializer<'de> {
         self.record_attributes
             .as_ref()
             .expect("Attributes haven't been set")
+    }
+
+    fn get_input(&self) -> &[u8] {
+        self.input
+    }
+
+    fn set_input(&mut self, input: &'de [u8]) {
+        self.input = input;
     }
 }
 
@@ -371,7 +414,10 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.record_attributes.is_none() {
+        if self.record_attributes.is_some() {
+            let len = self.record_attributes().records_len;
+            visitor.visit_seq(SeqDeserializer::new(&mut self, len))
+        } else {
             if self.input.len() < 4 {
                 return Err(de::Error::custom(
                     "not enough bytes to deserialize seq size (i32)",
@@ -383,13 +429,6 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             bytes.copy_from_slice(val);
             let len = i32::from_be_bytes(bytes);
             visitor.visit_seq(SeqDeserializer::new(&mut self, len))
-        } else {
-            let len = self.record_attributes().rec_length;
-            let c = visitor.consumed();
-            let val = visitor.visit_seq(SeqDeserializer::new(&mut self, len)); // TODO: dedicated one
-            let (_, rest) = self.input.split_at(*c.borrow());
-            self.input = rest;
-            val
         }
     }
 
@@ -928,17 +967,32 @@ impl<'de> Deserialize<'de> for Records {
     where
         D: de::Deserializer<'de>,
     {
-        // TODO: use batch_length to find the end?
+        struct RecordsVisitor;
+
+        impl<'de> Visitor<'de> for RecordsVisitor {
+            type Value = Records;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "potentially compressed records")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Records, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut records = vec![];
+                while let Some(record) = seq.next_element()? {
+                    records.push(record);
+                }
+                Ok(Records(records))
+            }
+        }
+
+        println!("=======> {:?}", deserializer.record_attributes());
         match deserializer.record_attributes().compression {
             Compression::None => {
-                // deserializer.deserialize_bytes(SomeCustomVisitor);
-
-                let mut records = vec![];
-                // for _ in 0..deserializer.record_attributes().rec_length {
-                //     records.push(Record::deserialize(deserializer)?);
-                // }
-
-                Ok(Records::Uncompressed(records))
+                let res = Ok(deserializer.deserialize_seq(RecordsVisitor)?);
+                res
             }
             _ => unimplemented!(), // TODO: implement
         }
