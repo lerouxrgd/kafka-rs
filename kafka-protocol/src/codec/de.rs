@@ -7,6 +7,7 @@ use serde::de::{
     self, Deserialize, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
 };
 
+use crate::codec::compression::Compression;
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
 use crate::types::*;
@@ -93,8 +94,9 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         // Read `batch_length` from current raw input
         let mut batch_len_bytes = [0u8; 4];
         batch_len_bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
-        let batch_length = i32::from_be_bytes(batch_len_bytes)
-            - (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
+        let records_size = (i32::from_be_bytes(batch_len_bytes)
+            - (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8)
+            as usize;
 
         // Find `attributes` first byte position
         let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;
@@ -126,7 +128,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
             is_control,
             compression,
             records_len,
-            batch_length,
+            records_size,
         });
 
         Ok(())
@@ -138,7 +140,7 @@ struct Attributes {
     compression: Compression,
     is_control: bool,
     records_len: i32,
-    batch_length: i32,
+    records_size: usize,
 }
 
 trait RecordExt<'b> {
@@ -964,16 +966,21 @@ impl<'de> Deserialize<'de> for Records {
             }
         }
 
-        println!("=======> {:?}", deserializer.record_attributes());
         match deserializer.record_attributes().compression {
-            Compression::None => {
-                let size = deserializer.record_attributes().batch_length;
+            Compression::None => Ok(deserializer.deserialize_seq(RecordsVisitor)?),
+            #[cfg(feature = "gzip")]
+            Compression::Gzip => {
+                use crate::codec::compression::gzip;
+
+                let size = deserializer.record_attributes().records_size;
                 let bytes = *deserializer.input().borrow();
-                let uncompressed = Vec::from(bytes);
+                let uncompressed = gzip::uncompress(bytes).map_err(de::Error::custom)?;
+
                 let input = deserializer.input();
                 *input.borrow_mut() = &uncompressed;
                 let res = Ok(deserializer.deserialize_seq(RecordsVisitor)?);
-                *input.borrow_mut() = &bytes[size as usize..];
+                *input.borrow_mut() = &bytes[size..];
+
                 res
             }
             _ => unimplemented!(), // TODO: implement

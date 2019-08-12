@@ -10,5 +10,11 @@ readme = "README.md"
 serde = { version = "1.0", features = ["derive"] }
 serde_repr = "0.1"
 
+flate2 = { version = "1.0", optional = true }
+
+[features]
+default = ["gzip"]
+gzip = ["flate2"]
+
 [dev-dependencies]
 matches = "0.1"

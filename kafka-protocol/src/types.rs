@@ -129,10 +129,6 @@ pub struct HeaderRecord {
 }
 
 impl RecordBatch {
-    pub fn compression(&self) -> Compression {
-        Compression::from_attr(self.attributes)
-    }
-
     pub fn timestamp_type(&self) -> TimestampType {
         match (self.attributes >> 3) & 1 {
             0 => TimestampType::CreateTime,
@@ -147,40 +143,11 @@ impl RecordBatch {
         }
     }
 
-    pub fn is_control_batch(&self) -> bool {
+    pub fn is_control(&self) -> bool {
         match (self.attributes >> 5) & 1 {
             0 => false,
             _ => true,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Compression {
-    None,
-    Gzip,
-    Snappy,
-    Lz4,
-    Zstd,
-    Unknown,
-}
-
-impl Compression {
-    pub fn from_attr(attributes: i16) -> Self {
-        match attributes & 7 {
-            0 => Compression::None,
-            1 => Compression::Gzip,
-            2 => Compression::Snappy,
-            3 => Compression::Lz4,
-            4 => Compression::Zstd,
-            _ => Compression::Unknown,
-        }
-    }
-}
-
-impl Default for Compression {
-    fn default() -> Self {
-        Self::None
     }
 }
 
