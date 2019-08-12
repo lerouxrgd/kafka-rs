@@ -1,3 +1,5 @@
+mod compression;
+
 pub mod de;
 pub mod error;
 pub mod ser;
@@ -31,13 +33,10 @@ mod tests {
         let mut deserializer = Deserializer::from_bytes(input, version.unwrap_or_else(|| 0));
         let resp = T::deserialize(&mut deserializer)?;
 
-        if deserializer.input.len() == 0 {
+        if deserializer.len() == 0 {
             Ok(resp)
         } else {
-            Err(serde::de::Error::custom(format!(
-                "{} bytes remaining",
-                deserializer.input.len()
-            )))
+            Err(serde::de::Error::custom(format!("bytes remaining",)))
         }
     }
 

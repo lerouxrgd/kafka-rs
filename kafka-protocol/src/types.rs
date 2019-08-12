@@ -78,13 +78,32 @@ pub struct RecordBatch {
     pub producer_id: i64,
     pub producer_epoch: i16,
     pub base_sequence: i32,
-    pub records: Vec<Record>,
+    pub records_len: i32,
+    pub records: Records,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+pub struct Records(pub Vec<Record>);
+
+impl Deref for Records {
+    type Target = Vec<Record>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum Record {
     Batch(Batch),
     Control(Control),
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
+pub struct Control {
+    pub version: i16,
+    pub r#type: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
@@ -109,26 +128,7 @@ pub struct HeaderRecord {
     pub value: Vec<u8>,
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
-)]
-pub struct Control {
-    pub version: i16,
-    pub r#type: i16,
-}
-
 impl RecordBatch {
-    pub fn compression(&self) -> Compression {
-        match self.attributes & 7 {
-            0 => Compression::NoCompression,
-            1 => Compression::Gzip,
-            2 => Compression::Snappy,
-            3 => Compression::Lz4,
-            4 => Compression::Zstd,
-            _ => Compression::Unknown,
-        }
-    }
-
     pub fn timestamp_type(&self) -> TimestampType {
         match (self.attributes >> 3) & 1 {
             0 => TimestampType::CreateTime,
@@ -143,22 +143,12 @@ impl RecordBatch {
         }
     }
 
-    pub fn is_control_batch(&self) -> bool {
+    pub fn is_control(&self) -> bool {
         match (self.attributes >> 5) & 1 {
             0 => false,
             _ => true,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Compression {
-    NoCompression,
-    Gzip,
-    Snappy,
-    Lz4,
-    Zstd,
-    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
