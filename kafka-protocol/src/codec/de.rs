@@ -52,7 +52,7 @@ pub struct Deserializer<'b, 'de: 'b> {
 }
 
 impl<'b, 'de> Deserializer<'b, 'de> {
-    pub fn from_bytes(input: &'b [u8], version: usize) -> Self {
+    pub fn from_bytes(input: &'de [u8], version: usize) -> Self {
         Deserializer {
             input: Rc::new(RefCell::new(input)),
             identifiers: vec![],
@@ -142,22 +142,16 @@ struct Attributes {
 }
 
 trait RecordExt<'b> {
-    fn record_attributes(&self) -> &Attributes;
-    fn input(&self) -> Rc<RefCell<&'b [u8]>>;
-}
-
-impl<'b, 'de, D> RecordExt<'b> for D
-where
-    D: de::Deserializer<'de>,
-{
-    default fn record_attributes(&self) -> &Attributes {
+    fn record_attributes(&self) -> &Attributes {
         unimplemented!()
     }
 
-    default fn input(&self) -> Rc<RefCell<&'b [u8]>> {
+    fn input(&self) -> Rc<RefCell<&'b [u8]>> {
         unimplemented!()
     }
 }
+
+impl<'b, 'de, D> RecordExt<'b> for D where D: de::Deserializer<'de> {}
 
 impl<'b, 'de> RecordExt<'b> for &mut Deserializer<'b, 'de> {
     fn record_attributes(&self) -> &Attributes {
@@ -627,14 +621,12 @@ impl<'a, 'b, 'de> VariantAccess<'de> for Enum<'a, 'b, 'de> {
 }
 
 trait Consumed {
-    fn consumed(&self) -> Rc<RefCell<usize>>;
-}
-
-impl<'de, T: Visitor<'de>> Consumed for T {
-    default fn consumed(&self) -> Rc<RefCell<usize>> {
-        Rc::new(RefCell::new(0))
+    fn consumed(&self) -> Rc<RefCell<usize>> {
+        unimplemented!()
     }
 }
+
+impl<'de, V: Visitor<'de>> Consumed for V {}
 
 impl<'de> Deserialize<'de> for Bytes {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Bytes, D::Error>
