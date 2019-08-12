@@ -43,19 +43,18 @@ where
     }
 }
 
-// TODO: double check what need to be pub(crate)
 #[derive(Debug)]
-pub struct Deserializer<'de> {
-    pub(crate) input: &'de [u8],
-    pub(crate) identifiers: Vec<&'de str>,
-    pub(crate) struct_variant: usize,
+pub struct Deserializer<'b, 'de: 'b> {
+    input: Rc<RefCell<&'b [u8]>>,
+    identifiers: Vec<&'de str>,
+    struct_variant: usize,
     record_attributes: Option<Attributes>,
 }
 
-impl<'de> Deserializer<'de> {
-    pub fn from_bytes(input: &'de [u8], version: usize) -> Self {
+impl<'b, 'de> Deserializer<'b, 'de> {
+    pub fn from_bytes(input: &'b [u8], version: usize) -> Self {
         Deserializer {
-            input,
+            input: Rc::new(RefCell::new(input)),
             identifiers: vec![],
             struct_variant: version,
             record_attributes: None,
@@ -63,47 +62,9 @@ impl<'de> Deserializer<'de> {
     }
 
     pub fn len(&self) -> usize {
-        self.input.len()
-    }
-}
-
-#[derive(Debug)]
-struct Attributes {
-    compression: Compression,
-    is_control: bool,
-    records_len: i32,
-    batch_length: i32,
-}
-
-trait PrepareRecord<'de> {
-    fn prepare_record(&mut self) -> Result<()>; // TODO: can be a simple Deserializer method
-    fn record_attributes(&self) -> &Attributes;
-    fn get_input(&self) -> &[u8];
-    fn set_input(&mut self, input: &'de [u8]);
-}
-
-impl<'de, D> PrepareRecord<'de> for D
-where
-    D: de::Deserializer<'de>,
-{
-    default fn prepare_record(&mut self) -> Result<()> {
-        unimplemented!()
+        self.input.borrow().len()
     }
 
-    default fn record_attributes(&self) -> &Attributes {
-        unimplemented!()
-    }
-
-    default fn get_input(&self) -> &[u8] {
-        unimplemented!()
-    }
-
-    default fn set_input(&mut self, _input: &'de [u8]) {
-        unimplemented!()
-    }
-}
-
-impl<'de> PrepareRecord<'de> for &mut Deserializer<'de> {
     fn prepare_record(&mut self) -> Result<()> {
         // pub struct RecordBatch {
         //     pub base_offset: i64,
@@ -122,44 +83,41 @@ impl<'de> PrepareRecord<'de> for &mut Deserializer<'de> {
         //     pub records: Records,
         // }
 
-        // TODO: is `batch_length` needed ?
-
         // Find `batch_length` first byte position
         let batch_len_pos = (64 + 32) / 8;
-        if self.input.len() < batch_len_pos {
+        if self.input.borrow().len() < batch_len_pos {
             return Err(de::Error::custom(
                 "Not enough bytes to inspect RecordBatch batch_length",
             ));
         }
         // Read `batch_length` from current raw input
         let mut batch_len_bytes = [0u8; 4];
-        batch_len_bytes.copy_from_slice(&self.input[batch_len_pos - 4..batch_len_pos]);
+        batch_len_bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
         let batch_length = i32::from_be_bytes(batch_len_bytes)
-            - (32 + 32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8
-            - 1;
+            - (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
 
         // Find `attributes` first byte position
         let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;
-        if self.input.len() < attr_pos {
+        if self.input.borrow().len() < attr_pos {
             return Err(de::Error::custom(
                 "Not enough bytes to inspect RecordBatch attributes",
             ));
         }
         // Read `attributes` from current raw input
         let mut attr_bytes = [0u8; 2];
-        attr_bytes.copy_from_slice(&self.input[attr_pos - 2..attr_pos]);
+        attr_bytes.copy_from_slice(&self.input.borrow()[attr_pos - 2..attr_pos]);
         let attributes = i16::from_be_bytes(attr_bytes);
 
         // Find `records_len` first byte position
         let rec_len_pos = (8 * attr_pos + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
-        if self.input.len() < rec_len_pos {
+        if self.input.borrow().len() < rec_len_pos {
             return Err(de::Error::custom(
                 "Not enough bytes to inspect RecordBatch records_len",
             ));
         }
         // Read `records_len` from current raw input
         let mut rec_len_bytes = [0u8; 4];
-        rec_len_bytes.copy_from_slice(&self.input[rec_len_pos - 4..rec_len_pos]);
+        rec_len_bytes.copy_from_slice(&self.input.borrow()[rec_len_pos - 4..rec_len_pos]);
         let records_len = i32::from_be_bytes(rec_len_bytes);
 
         let is_control = ((attributes >> 5) & 1) == 1; // attributes bit 5 == 1
@@ -173,34 +131,58 @@ impl<'de> PrepareRecord<'de> for &mut Deserializer<'de> {
 
         Ok(())
     }
+}
 
+#[derive(Debug)]
+struct Attributes {
+    compression: Compression,
+    is_control: bool,
+    records_len: i32,
+    batch_length: i32,
+}
+
+trait RecordExt<'b> {
+    fn record_attributes(&self) -> &Attributes;
+    fn input(&self) -> Rc<RefCell<&'b [u8]>>;
+}
+
+impl<'b, 'de, D> RecordExt<'b> for D
+where
+    D: de::Deserializer<'de>,
+{
+    default fn record_attributes(&self) -> &Attributes {
+        unimplemented!()
+    }
+
+    default fn input(&self) -> Rc<RefCell<&'b [u8]>> {
+        unimplemented!()
+    }
+}
+
+impl<'b, 'de> RecordExt<'b> for &mut Deserializer<'b, 'de> {
     fn record_attributes(&self) -> &Attributes {
         self.record_attributes
             .as_ref()
             .expect("Attributes haven't been set")
     }
 
-    fn get_input(&self) -> &[u8] {
-        self.input
-    }
-
-    fn set_input(&mut self, input: &'de [u8]) {
-        self.input = input;
+    fn input(&self) -> Rc<RefCell<&'b [u8]>> {
+        self.input.clone()
     }
 }
 
-impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     type Error = Error;
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 1 {
+        if self.input.borrow().len() < 1 {
             return Err(de::Error::custom("not enough bytes to deserialize bool"));
         }
-        let (val, rest) = self.input.split_at(1);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(1);
+        *self.input.borrow_mut() = rest;
         let val = match val[0] {
             0u8 => false,
             1u8 => true,
@@ -213,11 +195,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 1 {
+        if self.input.borrow().len() < 1 {
             return Err(de::Error::custom("not enough bytes to deserialize i8"));
         }
-        let (val, rest) = self.input.split_at(1);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(1);
+        *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 1];
         bytes.copy_from_slice(val);
         visitor.visit_i8(i8::from_be_bytes(bytes))
@@ -227,11 +209,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 2 {
+        if self.input.borrow().len() < 2 {
             return Err(de::Error::custom("not enough bytes to deserialize i16"));
         }
-        let (val, rest) = self.input.split_at(2);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(2);
+        *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 2];
         bytes.copy_from_slice(val);
         visitor.visit_i16(i16::from_be_bytes(bytes))
@@ -241,11 +223,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 4 {
+        if self.input.borrow().len() < 4 {
             return Err(de::Error::custom("not enough bytes to deserialize i32"));
         }
-        let (val, rest) = self.input.split_at(4);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(4);
+        *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 4];
         bytes.copy_from_slice(val);
         visitor.visit_i32(i32::from_be_bytes(bytes))
@@ -255,11 +237,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 8 {
+        if self.input.borrow().len() < 8 {
             return Err(de::Error::custom("not enough bytes to deserialize i64"));
         }
-        let (val, rest) = self.input.split_at(8);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(8);
+        *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(val);
         visitor.visit_i64(i64::from_be_bytes(bytes))
@@ -270,11 +252,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         // TODO: only used for vanilla Vec<u8>, make dedicated RawBytes instead ?
-        if self.input.len() < 1 {
+        if self.input.borrow().len() < 1 {
             return Err(de::Error::custom("not enough bytes to deserialize u8"));
         }
-        let (val, rest) = self.input.split_at(1);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(1);
+        *self.input.borrow_mut() = rest;
         visitor.visit_u8(val[0])
     }
 
@@ -289,11 +271,11 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 4 {
+        if self.input.borrow().len() < 4 {
             return Err(de::Error::custom("not enough bytes to deserialize u32"));
         }
-        let (val, rest) = self.input.split_at(4);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(4);
+        *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 4];
         bytes.copy_from_slice(val);
         visitor.visit_u32(u32::from_be_bytes(bytes))
@@ -338,27 +320,27 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.len() < 2 {
+        if self.input.borrow().len() < 2 {
             return Err(de::Error::custom(
                 "not enough bytes to deserialize string size (i16)",
             ));
         }
-        let (val, rest) = self.input.split_at(2);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(2);
+        *self.input.borrow_mut() = rest;
 
         let mut bytes = [0u8; 2];
         bytes.copy_from_slice(val);
         let size = i16::from_be_bytes(bytes) as usize;
 
-        if self.input.len() < size {
+        if self.input.borrow().len() < size {
             return Err(de::Error::custom(format!(
                 "not enough bytes ({}) to deserialize string of length {}",
-                self.input.len(),
+                self.input.borrow().len(),
                 size
             )));
         }
-        let (val, rest) = self.input.split_at(size);
-        self.input = rest;
+        let (val, rest) = self.input.borrow().split_at(size);
+        *self.input.borrow_mut() = rest;
 
         let val = String::from_utf8(val.to_vec())?;
         visitor.visit_string(val)
@@ -369,9 +351,9 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         let c = visitor.consumed();
-        let val = visitor.visit_bytes(self.input);
-        let (_, rest) = self.input.split_at(*c.borrow());
-        self.input = rest;
+        let val = visitor.visit_bytes(*self.input.borrow());
+        let (_, rest) = self.input.borrow().split_at(*c.borrow());
+        *self.input.borrow_mut() = rest;
         val
     }
 
@@ -418,16 +400,18 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             let len = self.record_attributes().records_len;
             visitor.visit_seq(SeqDeserializer::new(&mut self, len))
         } else {
-            if self.input.len() < 4 {
+            if self.input.borrow().len() < 4 {
                 return Err(de::Error::custom(
                     "not enough bytes to deserialize seq size (i32)",
                 ));
             }
-            let (val, rest) = self.input.split_at(4);
-            self.input = rest;
+
+            let (val, rest) = self.input.borrow().split_at(4);
+            *self.input.borrow_mut() = rest;
             let mut bytes = [0u8; 4];
             bytes.copy_from_slice(val);
             let len = i32::from_be_bytes(bytes);
+
             visitor.visit_seq(SeqDeserializer::new(&mut self, len))
         }
     }
@@ -521,18 +505,18 @@ impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-struct SeqDeserializer<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct SeqDeserializer<'a, 'b, 'de: 'a + 'b> {
+    de: &'a mut Deserializer<'b, 'de>,
     len: i32,
 }
 
-impl<'a, 'de> SeqDeserializer<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, len: i32) -> Self {
+impl<'a, 'b, 'de> SeqDeserializer<'a, 'b, 'de> {
+    fn new(de: &'a mut Deserializer<'b, 'de>, len: i32) -> Self {
         SeqDeserializer { de, len }
     }
 }
 
-impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
+impl<'a, 'b, 'de> SeqAccess<'de> for SeqDeserializer<'a, 'b, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -548,19 +532,19 @@ impl<'de, 'a> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
     }
 }
 
-struct StructDeserializer<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct StructDeserializer<'a, 'b, 'de: 'a + 'b> {
+    de: &'a mut Deserializer<'b, 'de>,
     fields: &'static [&'static str],
     i: usize,
 }
 
-impl<'a, 'de> StructDeserializer<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, fields: &'static [&'static str]) -> Self {
+impl<'a, 'b, 'de> StructDeserializer<'a, 'b, 'de> {
+    fn new(de: &'a mut Deserializer<'b, 'de>, fields: &'static [&'static str]) -> Self {
         StructDeserializer { de, fields, i: 0 }
     }
 }
 
-impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
+impl<'a, 'b, 'de> MapAccess<'de> for StructDeserializer<'a, 'b, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -585,18 +569,18 @@ impl<'de, 'a> MapAccess<'de> for StructDeserializer<'a, 'de> {
 }
 
 #[derive(Debug)]
-struct Enum<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct Enum<'a, 'b, 'de: 'a + 'b> {
+    de: &'a mut Deserializer<'b, 'de>,
     variant: &'static str,
 }
 
-impl<'a, 'de> Enum<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, variant: &'static str) -> Self {
+impl<'a, 'b, 'de> Enum<'a, 'b, 'de> {
+    fn new(de: &'a mut Deserializer<'b, 'de>, variant: &'static str) -> Self {
         Enum { de, variant }
     }
 }
 
-impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
+impl<'a, 'b, 'de> EnumAccess<'de> for Enum<'a, 'b, 'de> {
     type Error = Error;
     type Variant = Self;
 
@@ -610,7 +594,7 @@ impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
     }
 }
 
-impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
+impl<'a, 'b, 'de> VariantAccess<'de> for Enum<'a, 'b, 'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<()> {
@@ -991,7 +975,13 @@ impl<'de> Deserialize<'de> for Records {
         println!("=======> {:?}", deserializer.record_attributes());
         match deserializer.record_attributes().compression {
             Compression::None => {
+                let size = deserializer.record_attributes().batch_length;
+                let bytes = *deserializer.input().borrow();
+                let uncompressed = Vec::from(bytes);
+                let input = deserializer.input();
+                *input.borrow_mut() = &uncompressed;
                 let res = Ok(deserializer.deserialize_seq(RecordsVisitor)?);
+                *input.borrow_mut() = &bytes[size as usize..];
                 res
             }
             _ => unimplemented!(), // TODO: implement
