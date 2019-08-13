@@ -1,6 +1,9 @@
 #[cfg(feature = "gzip")]
 pub mod gzip;
 
+#[cfg(feature = "snappy")]
+pub mod snappy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Compression {
     None,
