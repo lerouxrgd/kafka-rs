@@ -966,43 +966,44 @@ impl<'de> Deserialize<'de> for Records {
             }
         }
 
-        match deserializer.record_attributes().compression {
-            Compression::None => Ok(deserializer.deserialize_seq(RecordsVisitor)?),
+        let compression = &deserializer.record_attributes().compression;
 
+        if let Compression::None = compression {
+            return Ok(deserializer.deserialize_seq(RecordsVisitor)?);
+        }
+
+        let size = deserializer.record_attributes().records_size;
+        let input = deserializer.input();
+        let bytes = *input.borrow();
+
+        let decompressed;
+        match compression {
             #[cfg(feature = "gzip")]
             Compression::Gzip => {
                 use crate::codec::compression::gzip;
-
-                let size = deserializer.record_attributes().records_size;
-                let input = deserializer.input();
-                let bytes = *input.borrow();
-                let decompressed = gzip::decompress(&bytes[..size]).map_err(de::Error::custom)?;
-
-                *input.borrow_mut() = &decompressed;
-                let res = Ok(deserializer.deserialize_seq(RecordsVisitor)?);
-                *input.borrow_mut() = &bytes[size..];
-
-                res
+                decompressed = gzip::decompress(&bytes[..size]).map_err(de::Error::custom)?;
             }
 
             #[cfg(feature = "snappy")]
             Compression::Snappy => {
                 use crate::codec::compression::snappy;
-
-                let size = deserializer.record_attributes().records_size;
-                let input = deserializer.input();
-                let bytes = *input.borrow();
-                let decompressed = snappy::decompress(&bytes[..size]).map_err(de::Error::custom)?;
-
-                *input.borrow_mut() = &decompressed;
-                let res = Ok(deserializer.deserialize_seq(RecordsVisitor)?);
-                *input.borrow_mut() = &bytes[size..];
-
-                res
+                decompressed = snappy::decompress(&bytes[..size]).map_err(de::Error::custom)?;
             }
 
-            _ => unimplemented!(), // TODO: implement
+            #[cfg(feature = "lz4")]
+            Compression::Lz4 => {
+                use crate::codec::compression::lz4;
+                decompressed = lz4::decompress(&bytes[..size]).map_err(de::Error::custom)?;
+            }
+
+            _ => unimplemented!(),
         }
+
+        *input.borrow_mut() = &decompressed;
+        let res = Ok(deserializer.deserialize_seq(RecordsVisitor)?);
+        *input.borrow_mut() = &bytes[size..];
+
+        res
     }
 }
 
