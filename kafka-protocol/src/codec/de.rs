@@ -996,7 +996,18 @@ impl<'de> Deserialize<'de> for Records {
                 decompressed = lz4::decompress(&bytes[..size]).map_err(de::Error::custom)?;
             }
 
-            _ => unimplemented!(),
+            #[cfg(feature = "zstd")]
+            Compression::Zstd => {
+                use crate::codec::compression::zstd;
+                decompressed = zstd::decompress(&bytes[..size]).map_err(de::Error::custom)?;
+            }
+
+            _ => {
+                return Err(de::Error::custom(format!(
+                    "Unsupported compression format: {:?}",
+                    compression
+                )));
+            }
         }
 
         *input.borrow_mut() = &decompressed;

@@ -7,6 +7,9 @@ pub mod snappy;
 #[cfg(feature = "lz4")]
 pub mod lz4;
 
+#[cfg(feature = "zstd")]
+pub mod zstd;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Compression {
     None,

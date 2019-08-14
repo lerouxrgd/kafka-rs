@@ -1,7 +1,7 @@
 [package]
 name = "kafka-rs"
 version = "0.1.0"
-authors = ["Leroux Romain <leroux.rgd@gmail.com>"]
+authors = ["Romain Leroux <romain@leroux.dev>"]
 edition = "2018"
 license = "MIT"
 readme = "README.md"
