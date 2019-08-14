@@ -109,8 +109,6 @@ fn wip_requests() -> std::io::Result<()> {
     }
 
     // TODO: crc check
-    // TODO: check that recordBatch.batch_length matches actual record length
-    // TODO: Take into account RecordBatch compression information in attributes to deser records
 
     Ok(())
 }

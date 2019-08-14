@@ -86,11 +86,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
 
         // Find `batch_length` first byte position
         let batch_len_pos = (64 + 32) / 8;
-        if self.input.borrow().len() < batch_len_pos {
-            return Err(de::Error::custom(
-                "Not enough bytes to inspect RecordBatch batch_length",
-            ));
-        }
+        ensure(batch_len_pos, "batch_length", *self.input.borrow())?;
         // Read `batch_length` from current raw input
         let mut batch_len_bytes = [0u8; 4];
         batch_len_bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
@@ -100,11 +96,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
 
         // Find `attributes` first byte position
         let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;
-        if self.input.borrow().len() < attr_pos {
-            return Err(de::Error::custom(
-                "Not enough bytes to inspect RecordBatch attributes",
-            ));
-        }
+        ensure(attr_pos, "attributes", *self.input.borrow())?;
         // Read `attributes` from current raw input
         let mut attr_bytes = [0u8; 2];
         attr_bytes.copy_from_slice(&self.input.borrow()[attr_pos - 2..attr_pos]);
@@ -112,11 +104,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
 
         // Find `records_len` first byte position
         let rec_len_pos = (8 * attr_pos + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
-        if self.input.borrow().len() < rec_len_pos {
-            return Err(de::Error::custom(
-                "Not enough bytes to inspect RecordBatch records_len",
-            ));
-        }
+        ensure(rec_len_pos, "records_len", *self.input.borrow())?;
         // Read `records_len` from current raw input
         let mut rec_len_bytes = [0u8; 4];
         rec_len_bytes.copy_from_slice(&self.input.borrow()[rec_len_pos - 4..rec_len_pos]);
@@ -174,9 +162,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 1 {
-            return Err(de::Error::custom("not enough bytes to deserialize bool"));
-        }
+        ensure(1, "bool", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(1);
         *self.input.borrow_mut() = rest;
         let val = match val[0] {
@@ -191,9 +177,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 1 {
-            return Err(de::Error::custom("not enough bytes to deserialize i8"));
-        }
+        ensure(1, "i8", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(1);
         *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 1];
@@ -205,9 +189,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 2 {
-            return Err(de::Error::custom("not enough bytes to deserialize i16"));
-        }
+        ensure(2, "i16", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(2);
         *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 2];
@@ -219,9 +201,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 4 {
-            return Err(de::Error::custom("not enough bytes to deserialize i32"));
-        }
+        ensure(4, "i32", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(4);
         *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 4];
@@ -233,9 +213,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 8 {
-            return Err(de::Error::custom("not enough bytes to deserialize i64"));
-        }
+        ensure(8, "i64", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(8);
         *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 8];
@@ -247,10 +225,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        // TODO: only used for vanilla Vec<u8>, make dedicated RawBytes instead ?
-        if self.input.borrow().len() < 1 {
-            return Err(de::Error::custom("not enough bytes to deserialize u8"));
-        }
+        ensure(1, "u8", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(1);
         *self.input.borrow_mut() = rest;
         visitor.visit_u8(val[0])
@@ -267,9 +242,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 4 {
-            return Err(de::Error::custom("not enough bytes to deserialize u32"));
-        }
+        ensure(4, "u32", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(4);
         *self.input.borrow_mut() = rest;
         let mut bytes = [0u8; 4];
@@ -316,11 +289,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.borrow().len() < 2 {
-            return Err(de::Error::custom(
-                "not enough bytes to deserialize string size (i16)",
-            ));
-        }
+        ensure(2, "string size (i16)", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(2);
         *self.input.borrow_mut() = rest;
 
@@ -328,13 +297,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
         bytes.copy_from_slice(val);
         let size = i16::from_be_bytes(bytes) as usize;
 
-        if self.input.borrow().len() < size {
-            return Err(de::Error::custom(format!(
-                "not enough bytes ({}) to deserialize string of length {}",
-                self.input.borrow().len(),
-                size
-            )));
-        }
+        ensure(size, "string", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(size);
         *self.input.borrow_mut() = rest;
 
@@ -396,12 +359,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
             let len = self.record_attributes().records_len;
             visitor.visit_seq(SeqDeserializer::new(&mut self, len))
         } else {
-            if self.input.borrow().len() < 4 {
-                return Err(de::Error::custom(
-                    "not enough bytes to deserialize seq size (i32)",
-                ));
-            }
-
+            ensure(4, "seq size (i32)", *self.input.borrow())?;
             let (val, rest) = self.input.borrow().split_at(4);
             *self.input.borrow_mut() = rest;
             let mut bytes = [0u8; 4];
@@ -656,23 +614,12 @@ impl<'de> Deserialize<'de> for Bytes {
             where
                 E: de::Error,
             {
-                if bytes.len() < 4 {
-                    return Err(de::Error::custom(
-                        "not enough bytes to deserialize byte buf size (i32)",
-                    ));
-                }
+                ensure(4, "byte buf size (i32)", bytes).map_err(de::Error::custom)?;
                 let mut buf = [0u8; 4];
                 buf.copy_from_slice(&bytes[..4]);
-                let size = i32::from_be_bytes(buf);
+                let size = i32::from_be_bytes(buf) as usize;
 
-                let size = size as usize;
-                if bytes.len() < size + 4 {
-                    return Err(de::Error::custom(format!(
-                        "not enough bytes to deserialize byte buf of length {} + 4",
-                        size
-                    )));
-                }
-
+                ensure(size + 4, "byte buf", bytes).map_err(de::Error::custom)?;
                 let mut buf = vec![0u8; size];
                 buf.copy_from_slice(&bytes[4..size + 4]);
                 *self.nb_read.borrow_mut() = size + 4;
@@ -713,11 +660,7 @@ impl<'de> Deserialize<'de> for NullableBytes {
             where
                 E: de::Error,
             {
-                if bytes.len() < 4 {
-                    return Err(de::Error::custom(
-                        "not enough bytes to deserialize byte buf size (i32)",
-                    ));
-                }
+                ensure(4, "byte buf size (i32)", bytes).map_err(de::Error::custom)?;
                 let mut buf = [0u8; 4];
                 buf.copy_from_slice(&bytes[..4]);
                 let size = i32::from_be_bytes(buf);
@@ -727,13 +670,8 @@ impl<'de> Deserialize<'de> for NullableBytes {
                     Ok(NullableBytes(None))
                 } else {
                     let size = size as usize;
-                    if bytes.len() < size + 4 {
-                        return Err(de::Error::custom(format!(
-                            "not enough bytes to deserialize byte buf of length {} + 4",
-                            size
-                        )));
-                    }
 
+                    ensure(size + 4, "byte buf", bytes).map_err(de::Error::custom)?;
                     let mut buf = vec![0u8; size];
                     buf.copy_from_slice(&bytes[4..size + 4]);
                     *self.nb_read.borrow_mut() = size + 4;
@@ -775,11 +713,7 @@ impl<'de> Deserialize<'de> for NullableString {
             where
                 E: de::Error,
             {
-                if bytes.len() < 2 {
-                    return Err(de::Error::custom(
-                        "not enough bytes to deserialize nullable str size (i16)",
-                    ));
-                }
+                ensure(2, "nullable str size (i16)", bytes).map_err(de::Error::custom)?;
                 let mut buf = [0u8; 2];
                 buf.copy_from_slice(&bytes[..2]);
                 let size = i16::from_be_bytes(buf);
@@ -790,13 +724,8 @@ impl<'de> Deserialize<'de> for NullableString {
                 }
 
                 let size = size as usize;
-                if bytes.len() < size + 2 {
-                    return Err(de::Error::custom(format!(
-                        "not enough bytes to deserialize nullable str of length {} + 2",
-                        size
-                    )));
-                }
 
+                ensure(size + 2, "nullable str", bytes).map_err(de::Error::custom)?;
                 let mut buf = vec![0u8; size];
                 buf.copy_from_slice(&bytes[2..size + 2]);
                 *self.nb_read.borrow_mut() = size + 2;
@@ -837,11 +766,7 @@ impl<'de> Deserialize<'de> for Varint {
             where
                 E: de::Error,
             {
-                if bytes.len() < 1 {
-                    return Err(de::Error::custom(
-                        "not enough bytes to deserialize varint (i32)",
-                    ));
-                }
+                ensure(1, "varint (i32)", bytes).map_err(de::Error::custom)?;
                 let mut rdr = std::io::Cursor::new(bytes);
                 let (i, nb_read) = zag_i32(&mut rdr).map_err(de::Error::custom)?;
                 *self.nb_read.borrow_mut() = nb_read;
@@ -881,11 +806,7 @@ impl<'de> Deserialize<'de> for Varlong {
             where
                 E: de::Error,
             {
-                if bytes.len() < 1 {
-                    return Err(de::Error::custom(
-                        "not enough bytes to deserialize varlong (i64)",
-                    ));
-                }
+                ensure(1, "varlong (i64)", bytes).map_err(de::Error::custom)?;
                 let mut rdr = std::io::Cursor::new(bytes);
                 let (i, nb_read) = zag_i64(&mut rdr).map_err(de::Error::custom)?;
                 *self.nb_read.borrow_mut() = nb_read;
@@ -1171,5 +1092,18 @@ impl<'de> Deserialize<'de> for HeaderRecord {
         }
 
         deserializer.deserialize_struct(NAME, FIELDS, HeaderRecordVisitor)
+    }
+}
+
+fn ensure(size: usize, what: &str, slice: &[u8]) -> Result<()> {
+    if slice.len() < size {
+        Err(de::Error::custom(format!(
+            "Not enough bytes ({:?}) to deserialize {:?} of size {:?}",
+            slice.len(),
+            what,
+            size
+        )))
+    } else {
+        Ok(())
     }
 }
