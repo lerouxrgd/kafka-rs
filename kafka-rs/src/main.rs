@@ -47,68 +47,108 @@ fn wip_requests() -> std::io::Result<()> {
 
     ///////////////////////////////////////////////////////////////////
 
+    // let header = HeaderRequest {
+    //     api_key: ApiKey::Fetch,
+    //     api_version: 4,
+    //     correlation_id: 42,
+    //     client_id: NullableString::from("me"),
+    // };
+
+    // let req = FetchRequest::V4 {
+    //     replica_id: -1,
+    //     max_wait_time: 5 * 1000,
+    //     min_bytes: 1,
+    //     max_bytes: 15 * 1024 * 1024,
+    //     isolation_level: 0,
+    //     topics: vec![fetch_request::v4::Topics {
+    //         topic: "test".into(),
+    //         partitions: vec![fetch_request::v4::Partitions {
+    //             partition: 0,
+    //             fetch_offset: 0,
+    //             partition_max_bytes: 5 * 1024 * 1024,
+    //         }],
+    //     }],
+    // };
+
+    // let bytes = encode_req(&header, &req).unwrap();
+    // stream.write(&bytes)?;
+
+    // let (header, resp) = read_resp::<_, FetchResponse>(&mut stream, 4).unwrap();
+    // println!("---> {:?}", header);
+    // println!("---> {:?}", resp);
+
+    // if let FetchResponse::V4 { responses, .. } = resp {
+    //     if let NullableBytes(Some(bytes)) = &responses
+    //         .get(0)
+    //         .unwrap()
+    //         .partition_responses
+    //         .get(0)
+    //         .unwrap()
+    //         .record_set
+    //     {
+    //         use serde::Deserialize;
+
+    //         let mut deserializer = Deserializer::from_bytes(&bytes, 0);
+
+    //         while deserializer.len() != 0 {
+    //             let batch = RecordBatch::deserialize(&mut deserializer).unwrap();
+    //             println!(">>>>>>>> {:?}", batch);
+
+    //             match &(*batch.records)[0] {
+    //                 Record::Batch(Batch { value, .. }) => {
+    //                     println!("{:?}", String::from_utf8(value.to_vec()))
+    //                 }
+    //                 _ => println!("Nothing"),
+    //             }
+    //         }
+    //     }
+    // }
+
+    // TODO: crc check
+
+    ///////////////////////////////////////////////////////////////////
+
     let header = HeaderRequest {
-        api_key: ApiKey::Fetch,
-        api_version: 4,
+        api_key: ApiKey::Produce,
+        api_version: 3,
         correlation_id: 42,
         client_id: NullableString::from("me"),
     };
 
-    let req = FetchRequest::V4 {
-        replica_id: -1,
-        max_wait_time: 5 * 1000,
-        min_bytes: 1,
-        max_bytes: 15 * 1024 * 1024,
-        isolation_level: 0,
-        // session_id: 0,
-        // session_epoch: 0,
-        topics: vec![fetch_request::v4::Topics {
+    let req = ProduceRequest::V3 {
+        transactional_id: NullableString(None),
+        acks: -1,
+        timeout: 5 * 1000,
+        topic_data: vec![produce_request::v3::TopicData {
             topic: "test".into(),
-            partitions: vec![fetch_request::v4::Partitions {
+            data: vec![produce_request::v3::Data {
                 partition: 0,
-                fetch_offset: 0,
-                // log_start_offset: 0,
-                partition_max_bytes: 5 * 1024 * 1024,
+                record_set: Records(vec![
+                    // TODO: setup produced Batch correctly
+
+                    // Record(Batch {
+                    //     length: Varint,
+                    //     attributes: i8,
+                    //     timestamp_delta: Varint,
+                    //     offset_delta: Varint,
+                    //     key_length: Varint,
+                    //     key: Vec<u8>,
+                    //     value_len: Varint,
+                    //     value: Vec<u8>,
+                    //     header_len: Varint,
+                    //     headers: Vec<HeaderRecord>,
+                    // })
+                ]),
             }],
         }],
-        // forgotten_topics_data: vec![],
     };
 
     let bytes = encode_req(&header, &req).unwrap();
     stream.write(&bytes)?;
 
-    let (header, resp) = read_resp::<_, FetchResponse>(&mut stream, 4).unwrap();
+    let (header, resp) = read_resp::<_, ProduceResponse>(&mut stream, 3).unwrap();
     println!("---> {:?}", header);
     println!("---> {:?}", resp);
-
-    if let FetchResponse::V4 { responses, .. } = resp {
-        if let NullableBytes(Some(bytes)) = &responses
-            .get(0)
-            .unwrap()
-            .partition_responses
-            .get(0)
-            .unwrap()
-            .record_set
-        {
-            use serde::Deserialize;
-
-            let mut deserializer = Deserializer::from_bytes(&bytes, 0);
-
-            while deserializer.len() != 0 {
-                let batch = RecordBatch::deserialize(&mut deserializer).unwrap();
-                println!(">>>>>>>> {:?}", batch);
-
-                match &(*batch.records)[0] {
-                    Record::Batch(Batch { value, .. }) => {
-                        println!("{:?}", String::from_utf8(value.to_vec()))
-                    }
-                    _ => println!("Nothing"),
-                }
-            }
-        }
-    }
-
-    // TODO: crc check
 
     Ok(())
 }

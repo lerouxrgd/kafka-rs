@@ -222,33 +222,6 @@ pub enum FetchRequest {
         isolation_level: i8,
         topics: Vec<fetch_request::v4::Topics>,
     },
-    // V5 {
-    //     replica_id: i32,
-    //     max_wait_time: i32,
-    //     min_bytes: i32,
-    //     max_bytes: i32,
-    //     isolation_level: i8,
-    //     topics: Vec<fetch_request::v5::Topics>,
-    // },
-    // V6 {
-    //     replica_id: i32,
-    //     max_wait_time: i32,
-    //     min_bytes: i32,
-    //     max_bytes: i32,
-    //     isolation_level: i8,
-    //     topics: Vec<fetch_request::v6::Topics>,
-    // },
-    // V7 {
-    //     replica_id: i32,
-    //     max_wait_time: i32,
-    //     min_bytes: i32,
-    //     max_bytes: i32,
-    //     isolation_level: i8,
-    //     session_id: i32,
-    //     session_epoch: i32,
-    //     topics: Vec<fetch_request::v7::Topics>,
-    //     forgotten_topics_data: Vec<fetch_request::v7::ForgottenTopicsData>,
-    // },
 }
 
 pub mod fetch_request {
@@ -317,53 +290,6 @@ pub mod fetch_request {
             pub partition_max_bytes: i32,
         }
     }
-    // pub mod v5 {
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Topics {
-    //         pub topic: String,
-    //         pub partitions: Vec<Partitions>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Partitions {
-    //         pub partition: i32,
-    //         pub fetch_offset: i64,
-    //         pub log_start_offset: i64,
-    //         pub partition_max_bytes: i32,
-    //     }
-    // }
-    // pub mod v6 {
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Topics {
-    //         pub topic: String,
-    //         pub partitions: Vec<Partitions>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Partitions {
-    //         pub partition: i32,
-    //         pub fetch_offset: i64,
-    //         pub log_start_offset: i64,
-    //         pub partition_max_bytes: i32,
-    //     }
-    // }
-    // pub mod v7 {
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Topics {
-    //         pub topic: String,
-    //         pub partitions: Vec<Partitions>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct ForgottenTopicsData {
-    //         pub topic: String,
-    //         pub partitions: Vec<i32>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Partitions {
-    //         pub partition: i32,
-    //         pub fetch_offset: i64,
-    //         pub log_start_offset: i64,
-    //         pub partition_max_bytes: i32,
-    //     }
-    // }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -387,20 +313,6 @@ pub enum FetchResponse {
         throttle_time_ms: i32,
         responses: Vec<fetch_response::v4::Responses>,
     },
-    // V5 {
-    //     throttle_time_ms: i32,
-    //     responses: Vec<fetch_response::v5::Responses>,
-    // },
-    // V6 {
-    //     throttle_time_ms: i32,
-    //     responses: Vec<fetch_response::v6::Responses>,
-    // },
-    // V7 {
-    //     throttle_time_ms: i32,
-    //     error_code: i16,
-    //     session_id: i32,
-    //     responses: Vec<fetch_response::v7::Responses>,
-    // },
 }
 
 pub mod fetch_response {
@@ -501,82 +413,156 @@ pub mod fetch_response {
             pub first_offset: i64,
         }
     }
-    // pub mod v5 {
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Responses {
-    //         pub topic: String,
-    //         pub partition_responses: Vec<PartitionResponses>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct PartitionResponses {
-    //         pub partition_header: PartitionHeader,
-    //         pub record_set: crate::types::NullableBytes,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct PartitionHeader {
-    //         pub partition: i32,
-    //         pub error_code: i16,
-    //         pub high_watermark: i64,
-    //         pub last_stable_offset: i64,
-    //         pub log_start_offset: i64,
-    //         pub aborted_transactions: Vec<AbortedTransactions>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct AbortedTransactions {
-    //         pub producer_id: i64,
-    //         pub first_offset: i64,
-    //     }
-    // }
-    // pub mod v6 {
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Responses {
-    //         pub topic: String,
-    //         pub partition_responses: Vec<PartitionResponses>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct PartitionResponses {
-    //         pub partition_header: PartitionHeader,
-    //         pub record_set: crate::types::NullableBytes,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct PartitionHeader {
-    //         pub partition: i32,
-    //         pub error_code: i16,
-    //         pub high_watermark: i64,
-    //         pub last_stable_offset: i64,
-    //         pub log_start_offset: i64,
-    //         pub aborted_transactions: Vec<AbortedTransactions>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct AbortedTransactions {
-    //         pub producer_id: i64,
-    //         pub first_offset: i64,
-    //     }
-    // }
-    // pub mod v7 {
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct Responses {
-    //         pub topic: String,
-    //         pub partition_responses: Vec<PartitionResponses>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct PartitionResponses {
-    //         pub partition_header: PartitionHeader,
-    //         pub record_set: crate::types::NullableBytes,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct PartitionHeader {
-    //         pub partition: i32,
-    //         pub error_code: i16,
-    //         pub high_watermark: i64,
-    //         pub last_stable_offset: i64,
-    //         pub log_start_offset: i64,
-    //         pub aborted_transactions: Vec<AbortedTransactions>,
-    //     }
-    //     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-    //     pub struct AbortedTransactions {
-    //         pub producer_id: i64,
-    //         pub first_offset: i64,
-    //     }
-    // }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProduceRequest {
+    V0 {
+        acks: i16,
+        timeout: i32,
+        topic_data: Vec<produce_request::v0::TopicData>,
+    },
+    V1 {
+        acks: i16,
+        timeout: i32,
+        topic_data: Vec<produce_request::v1::TopicData>,
+    },
+    V2 {
+        acks: i16,
+        timeout: i32,
+        topic_data: Vec<produce_request::v2::TopicData>,
+    },
+    V3 {
+        transactional_id: crate::types::NullableString,
+        acks: i16,
+        timeout: i32,
+        topic_data: Vec<produce_request::v3::TopicData>,
+    },
+}
+
+pub mod produce_request {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicData {
+            pub topic: String,
+            pub data: Vec<Data>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Data {
+            pub partition: i32,
+            pub record_set: crate::types::Records,
+        }
+    }
+    pub mod v1 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicData {
+            pub topic: String,
+            pub data: Vec<Data>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Data {
+            pub partition: i32,
+            pub record_set: crate::types::Records,
+        }
+    }
+    pub mod v2 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicData {
+            pub topic: String,
+            pub data: Vec<Data>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Data {
+            pub partition: i32,
+            pub record_set: crate::types::Records,
+        }
+    }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct TopicData {
+            pub topic: String,
+            pub data: Vec<Data>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Data {
+            pub partition: i32,
+            pub record_set: crate::types::Records,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProduceResponse {
+    V0 {
+        responses: Vec<produce_response::v0::Responses>,
+    },
+    V1 {
+        responses: Vec<produce_response::v1::Responses>,
+        throttle_time_ms: i32,
+    },
+    V2 {
+        responses: Vec<produce_response::v2::Responses>,
+        throttle_time_ms: i32,
+    },
+    V3 {
+        responses: Vec<produce_response::v3::Responses>,
+        throttle_time_ms: i32,
+    },
+}
+
+pub mod produce_response {
+    pub mod v0 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Responses {
+            pub topic: String,
+            pub partition_responses: Vec<PartitionResponses>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionResponses {
+            pub partition: i32,
+            pub error_code: i16,
+            pub base_offset: i64,
+        }
+    }
+    pub mod v1 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Responses {
+            pub topic: String,
+            pub partition_responses: Vec<PartitionResponses>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionResponses {
+            pub partition: i32,
+            pub error_code: i16,
+            pub base_offset: i64,
+        }
+    }
+    pub mod v2 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Responses {
+            pub topic: String,
+            pub partition_responses: Vec<PartitionResponses>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionResponses {
+            pub partition: i32,
+            pub error_code: i16,
+            pub base_offset: i64,
+            pub log_append_time: i64,
+        }
+    }
+    pub mod v3 {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct Responses {
+            pub topic: String,
+            pub partition_responses: Vec<PartitionResponses>,
+        }
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct PartitionResponses {
+            pub partition: i32,
+            pub error_code: i16,
+            pub base_offset: i64,
+            pub log_append_time: i64,
+        }
+    }
 }

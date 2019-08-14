@@ -225,6 +225,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
     where
         V: Visitor<'de>,
     {
+        // TODO: only used for vanilla Vec<u8>, make dedicated RawBytes instead ?
         ensure(1, "u8", *self.input.borrow())?;
         let (val, rest) = self.input.borrow().split_at(1);
         *self.input.borrow_mut() = rest;
