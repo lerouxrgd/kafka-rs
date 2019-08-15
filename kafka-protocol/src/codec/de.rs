@@ -84,31 +84,28 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         //     pub records: Records,
         // }
 
-        // Find `batch_length` first byte position
+        // Find `batch_length` first byte position and read it from current raw input
         let batch_len_pos = (64 + 32) / 8;
         ensure(batch_len_pos, "batch_length", *self.input.borrow())?;
-        // Read `batch_length` from current raw input
-        let mut batch_len_bytes = [0u8; 4];
-        batch_len_bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
-        let records_size = (i32::from_be_bytes(batch_len_bytes)
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
+        let records_size = (i32::from_be_bytes(bytes)
             - (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8)
             as usize;
 
-        // Find `attributes` first byte position
+        // Find `attributes` first byte position and read it from current raw input
         let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;
         ensure(attr_pos, "attributes", *self.input.borrow())?;
-        // Read `attributes` from current raw input
-        let mut attr_bytes = [0u8; 2];
-        attr_bytes.copy_from_slice(&self.input.borrow()[attr_pos - 2..attr_pos]);
-        let attributes = i16::from_be_bytes(attr_bytes);
+        let mut bytes = [0u8; 2];
+        bytes.copy_from_slice(&self.input.borrow()[attr_pos - 2..attr_pos]);
+        let attributes = i16::from_be_bytes(bytes);
 
-        // Find `records_len` first byte position
+        // Find `records_len` first byte position and read it from current raw input
         let rec_len_pos = (8 * attr_pos + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
         ensure(rec_len_pos, "records_len", *self.input.borrow())?;
-        // Read `records_len` from current raw input
-        let mut rec_len_bytes = [0u8; 4];
-        rec_len_bytes.copy_from_slice(&self.input.borrow()[rec_len_pos - 4..rec_len_pos]);
-        let records_len = i32::from_be_bytes(rec_len_bytes);
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(&self.input.borrow()[rec_len_pos - 4..rec_len_pos]);
+        let records_len = i32::from_be_bytes(bytes);
 
         let is_control = ((attributes >> 5) & 1) == 1; // attributes bit 5 == 1
         let compression = Compression::from_attr(attributes);
@@ -131,7 +128,7 @@ struct Attributes {
     records_size: usize,
 }
 
-trait RecordExt<'b> {
+trait DeserializerExt<'b> {
     fn record_attributes(&self) -> &Attributes {
         unimplemented!()
     }
@@ -141,9 +138,9 @@ trait RecordExt<'b> {
     }
 }
 
-impl<'b, 'de, D> RecordExt<'b> for D where D: de::Deserializer<'de> {}
+impl<'b, 'de, D> DeserializerExt<'b> for D where D: de::Deserializer<'de> {}
 
-impl<'b, 'de> RecordExt<'b> for &mut Deserializer<'b, 'de> {
+impl<'b, 'de> DeserializerExt<'b> for &mut Deserializer<'b, 'de> {
     fn record_attributes(&self) -> &Attributes {
         self.record_attributes
             .as_ref()
@@ -581,13 +578,13 @@ impl<'a, 'b, 'de> VariantAccess<'de> for Enum<'a, 'b, 'de> {
     }
 }
 
-trait Consumed {
+trait VisitorExt {
     fn consumed(&self) -> Rc<RefCell<usize>> {
         unimplemented!()
     }
 }
 
-impl<'de, V: Visitor<'de>> Consumed for V {}
+impl<'de, V: Visitor<'de>> VisitorExt for V {}
 
 impl<'de> Deserialize<'de> for Bytes {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Bytes, D::Error>
@@ -598,7 +595,7 @@ impl<'de> Deserialize<'de> for Bytes {
             nb_read: Rc<RefCell<usize>>,
         }
 
-        impl Consumed for BytesVisitor {
+        impl VisitorExt for BytesVisitor {
             fn consumed(&self) -> Rc<RefCell<usize>> {
                 self.nb_read.clone()
             }
@@ -644,7 +641,7 @@ impl<'de> Deserialize<'de> for NullableBytes {
             nb_read: Rc<RefCell<usize>>,
         }
 
-        impl Consumed for NullableBytesVisitor {
+        impl VisitorExt for NullableBytesVisitor {
             fn consumed(&self) -> Rc<RefCell<usize>> {
                 self.nb_read.clone()
             }
@@ -697,7 +694,7 @@ impl<'de> Deserialize<'de> for NullableString {
             nb_read: Rc<RefCell<usize>>,
         }
 
-        impl Consumed for NullableStringVisitor {
+        impl VisitorExt for NullableStringVisitor {
             fn consumed(&self) -> Rc<RefCell<usize>> {
                 self.nb_read.clone()
             }
@@ -750,7 +747,7 @@ impl<'de> Deserialize<'de> for Varint {
             nb_read: Rc<RefCell<usize>>,
         }
 
-        impl Consumed for VarintVisitor {
+        impl VisitorExt for VarintVisitor {
             fn consumed(&self) -> Rc<RefCell<usize>> {
                 self.nb_read.clone()
             }
@@ -790,7 +787,7 @@ impl<'de> Deserialize<'de> for Varlong {
             nb_read: Rc<RefCell<usize>>,
         }
 
-        impl Consumed for VarlongVisitor {
+        impl VisitorExt for VarlongVisitor {
             fn consumed(&self) -> Rc<RefCell<usize>> {
                 self.nb_read.clone()
             }
