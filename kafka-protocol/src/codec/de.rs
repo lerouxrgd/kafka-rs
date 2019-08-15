@@ -987,7 +987,7 @@ impl<'de> Deserialize<'de> for Batch {
                 let timestamp_delta: Option<Varint>;
                 let offset_delta: Option<Varint>;
                 let key_length: Option<Varint>;
-                let key: Option<Vec<u8>>;
+                let key: Option<Option<Vec<u8>>>;
                 let value_len: Option<Varint>;
                 let value: Option<Vec<u8>>;
                 let header_len: Option<Varint>;
@@ -999,11 +999,15 @@ impl<'de> Deserialize<'de> for Batch {
                 offset_delta = map.next_value::<Varint>().map(Some)?;
 
                 key_length = map.next_value::<Varint>().map(Some)?;
-                let mut buf = vec![];
-                for _ in 0..**key_length.as_ref().unwrap() {
-                    buf.push(map.next_value::<u8>()?);
+                if **key_length.as_ref().unwrap() > -1 {
+                    let mut buf = vec![];
+                    for _ in 0..**key_length.as_ref().unwrap() {
+                        buf.push(map.next_value::<u8>()?);
+                    }
+                    key = Some(Some(buf));
+                } else {
+                    key = Some(None);
                 }
-                key = Some(buf);
 
                 value_len = map.next_value::<Varint>().map(Some)?;
                 let mut buf = vec![];

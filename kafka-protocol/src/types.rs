@@ -136,7 +136,7 @@ pub struct Batch {
     pub timestamp_delta: Varint,
     pub offset_delta: Varint,
     pub key_length: Varint,
-    pub key: Vec<u8>,
+    pub key: Option<Vec<u8>>,
     pub value_len: Varint,
     pub value: Vec<u8>,
     pub header_len: Varint,
