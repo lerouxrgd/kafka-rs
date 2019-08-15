@@ -943,19 +943,19 @@ impl<'de> Deserialize<'de> for Record {
         D: de::Deserializer<'de>,
     {
         if deserializer.record_attributes().is_control {
-            Ok(Record::Control(Control::deserialize(deserializer)?))
+            Ok(Record::Control(RecControl::deserialize(deserializer)?))
         } else {
-            Ok(Record::Batch(Batch::deserialize(deserializer)?))
+            Ok(Record::Data(RecData::deserialize(deserializer)?))
         }
     }
 }
 
-impl<'de> Deserialize<'de> for Batch {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Batch, D::Error>
+impl<'de> Deserialize<'de> for RecData {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<RecData, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        const NAME: &'static str = "Batch";
+        const NAME: &'static str = "RecData";
         const FIELDS: &'static [&'static str] = &[
             "length",
             "attributes",
@@ -969,10 +969,10 @@ impl<'de> Deserialize<'de> for Batch {
             "headers",
         ];
 
-        struct BatchVisitor;
+        struct RecDataVisitor;
 
-        impl<'de> Visitor<'de> for BatchVisitor {
-            type Value = Batch;
+        impl<'de> Visitor<'de> for RecDataVisitor {
+            type Value = RecData;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(formatter, "kafka batch")
@@ -1023,7 +1023,7 @@ impl<'de> Deserialize<'de> for Batch {
                 }
                 headers = Some(buf);
 
-                let batch = Batch {
+                let batch = RecData {
                     length: length.unwrap(),
                     attributes: attributes.unwrap(),
                     timestamp_delta: timestamp_delta.unwrap(),
@@ -1040,7 +1040,7 @@ impl<'de> Deserialize<'de> for Batch {
             }
         }
 
-        deserializer.deserialize_struct(NAME, FIELDS, BatchVisitor)
+        deserializer.deserialize_struct(NAME, FIELDS, RecDataVisitor)
     }
 }
 

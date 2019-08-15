@@ -148,11 +148,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         unimplemented!()
     }
 
-    fn serialize_newtype_struct<T>(self, _name: &'static str, _val: &T) -> Result<()>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, val: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        unimplemented!()
+        val.serialize(&mut *self)?;
+        Ok(())
     }
 
     fn serialize_newtype_variant<T>(

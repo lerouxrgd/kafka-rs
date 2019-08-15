@@ -1,4 +1,6 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
+
+use crate::codec::Compression;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableString(pub Option<String>);
@@ -63,7 +65,16 @@ impl Deref for NullableBytes {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 pub struct RecordBatch {
     pub base_offset: i64,
@@ -83,6 +94,10 @@ pub struct RecordBatch {
 }
 
 impl RecordBatch {
+    pub fn builder() -> RecordBatchBuilder {
+        RecordBatchBuilder::new()
+    }
+
     pub fn timestamp_type(&self) -> TimestampType {
         match (self.attributes >> 3) & 1 {
             0 => TimestampType::CreateTime,
@@ -105,7 +120,7 @@ impl RecordBatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
 pub struct Records(pub Vec<Record>);
 
 impl Deref for Records {
@@ -115,22 +130,28 @@ impl Deref for Records {
     }
 }
 
+impl DerefMut for Records {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum Record {
-    Batch(Batch),
-    Control(Control),
+    Data(RecData),
+    Control(RecControl),
 }
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
 )]
-pub struct Control {
+pub struct RecControl {
     pub version: i16,
     pub r#type: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
-pub struct Batch {
+pub struct RecData {
     pub length: Varint,
     pub attributes: i8,
     pub timestamp_delta: Varint,
@@ -155,6 +176,52 @@ pub struct HeaderRecord {
 pub enum TimestampType {
     CreateTime,
     LogAppendTime,
+}
+
+pub struct RecordBatchBuilder {
+    rec_batch: RecordBatch,
+}
+
+impl RecordBatchBuilder {
+    pub fn new() -> Self {
+        let mut rec_batch = RecordBatch::default();
+        rec_batch.magic = 2;
+        RecordBatchBuilder { rec_batch }
+    }
+
+    pub fn add_record(mut self, ts: i64, mut rec: RecData) -> Self {
+        if self.rec_batch.first_timestamp == 0 {
+            self.rec_batch.first_timestamp = ts;
+        }
+
+        if ts > self.rec_batch.max_timestamp {
+            self.rec_batch.max_timestamp = ts;
+        }
+
+        let ts_delta = Varint((ts - self.rec_batch.first_timestamp) as i32);
+        rec.timestamp_delta = ts_delta;
+
+        rec.offset_delta = Varint(self.rec_batch.records.len() as i32 + 1);
+        self.rec_batch.records.deref_mut().push(Record::Data(rec));
+
+        self
+    }
+
+    pub fn compression(self, compression: Compression) -> Self {
+        match compression {
+            _ => (), // TODO: set attributes appropriate bits
+        }
+        self
+    }
+
+    pub fn build(self) -> RecordBatch {
+        let mut rec_batch = self.rec_batch;
+        if rec_batch.records.len() > 0 {
+            rec_batch.last_offset_delta = (rec_batch.records.len() - 1) as i32;
+            rec_batch.records_len = rec_batch.records.len() as i32;
+        }
+        rec_batch
+    }
 }
 
 #[derive(
