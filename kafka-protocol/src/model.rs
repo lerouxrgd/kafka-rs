@@ -450,7 +450,7 @@ pub mod produce_request {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Data {
             pub partition: i32,
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v1 {
@@ -462,7 +462,7 @@ pub mod produce_request {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Data {
             pub partition: i32,
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v2 {
@@ -474,7 +474,7 @@ pub mod produce_request {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Data {
             pub partition: i32,
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v3 {
@@ -486,7 +486,7 @@ pub mod produce_request {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct Data {
             pub partition: i32,
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
 }

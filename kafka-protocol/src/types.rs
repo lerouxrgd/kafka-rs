@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableString(pub Option<String>);
 
 impl NullableString {
@@ -16,7 +16,7 @@ impl Deref for NullableString {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varint(pub i32);
 
 impl Deref for Varint {
@@ -26,7 +26,7 @@ impl Deref for Varint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varlong(pub i64);
 
 impl Deref for Varlong {
@@ -36,7 +36,7 @@ impl Deref for Varlong {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Bytes(pub Vec<u8>);
 
 impl Deref for Bytes {
@@ -46,7 +46,7 @@ impl Deref for Bytes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableBytes(pub Option<Vec<u8>>);
 
 impl NullableBytes {
@@ -82,6 +82,29 @@ pub struct RecordBatch {
     pub records: Records,
 }
 
+impl RecordBatch {
+    pub fn timestamp_type(&self) -> TimestampType {
+        match (self.attributes >> 3) & 1 {
+            0 => TimestampType::CreateTime,
+            _ => TimestampType::LogAppendTime,
+        }
+    }
+
+    pub fn is_transactional(&self) -> bool {
+        match (self.attributes >> 4) & 1 {
+            0 => false,
+            _ => true,
+        }
+    }
+
+    pub fn is_control(&self) -> bool {
+        match (self.attributes >> 5) & 1 {
+            0 => false,
+            _ => true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct Records(pub Vec<Record>);
 
@@ -106,7 +129,7 @@ pub struct Control {
     pub r#type: i16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
 pub struct Batch {
     pub length: Varint,
     pub attributes: i8,
@@ -126,29 +149,6 @@ pub struct HeaderRecord {
     pub key: String,
     pub value_length: Varint,
     pub value: Vec<u8>,
-}
-
-impl RecordBatch {
-    pub fn timestamp_type(&self) -> TimestampType {
-        match (self.attributes >> 3) & 1 {
-            0 => TimestampType::CreateTime,
-            _ => TimestampType::LogAppendTime,
-        }
-    }
-
-    pub fn is_transactional(&self) -> bool {
-        match (self.attributes >> 4) & 1 {
-            0 => false,
-            _ => true,
-        }
-    }
-
-    pub fn is_control(&self) -> bool {
-        match (self.attributes >> 5) & 1 {
-            0 => false,
-            _ => true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -47,62 +47,62 @@ fn wip_requests() -> std::io::Result<()> {
 
     ///////////////////////////////////////////////////////////////////
 
-    // let header = HeaderRequest {
-    //     api_key: ApiKey::Fetch,
-    //     api_version: 4,
-    //     correlation_id: 42,
-    //     client_id: NullableString::from("me"),
-    // };
+    let header = HeaderRequest {
+        api_key: ApiKey::Fetch,
+        api_version: 4,
+        correlation_id: 42,
+        client_id: NullableString::from("me"),
+    };
 
-    // let req = FetchRequest::V4 {
-    //     replica_id: -1,
-    //     max_wait_time: 5 * 1000,
-    //     min_bytes: 1,
-    //     max_bytes: 15 * 1024 * 1024,
-    //     isolation_level: 0,
-    //     topics: vec![fetch_request::v4::Topics {
-    //         topic: "test".into(),
-    //         partitions: vec![fetch_request::v4::Partitions {
-    //             partition: 0,
-    //             fetch_offset: 0,
-    //             partition_max_bytes: 5 * 1024 * 1024,
-    //         }],
-    //     }],
-    // };
+    let req = FetchRequest::V4 {
+        replica_id: -1,
+        max_wait_time: 5 * 1000,
+        min_bytes: 1,
+        max_bytes: 15 * 1024 * 1024,
+        isolation_level: 0,
+        topics: vec![fetch_request::v4::Topics {
+            topic: "test".into(),
+            partitions: vec![fetch_request::v4::Partitions {
+                partition: 0,
+                fetch_offset: 0,
+                partition_max_bytes: 5 * 1024 * 1024,
+            }],
+        }],
+    };
 
-    // let bytes = encode_req(&header, &req).unwrap();
-    // stream.write(&bytes)?;
+    let bytes = encode_req(&header, &req).unwrap();
+    stream.write(&bytes)?;
 
-    // let (header, resp) = read_resp::<_, FetchResponse>(&mut stream, 4).unwrap();
-    // println!("---> {:?}", header);
-    // println!("---> {:?}", resp);
+    let (header, resp) = read_resp::<_, FetchResponse>(&mut stream, 4).unwrap();
+    println!("---> {:?}", header);
+    println!("---> {:?}", resp);
 
-    // if let FetchResponse::V4 { responses, .. } = resp {
-    //     if let NullableBytes(Some(bytes)) = &responses
-    //         .get(0)
-    //         .unwrap()
-    //         .partition_responses
-    //         .get(0)
-    //         .unwrap()
-    //         .record_set
-    //     {
-    //         use serde::Deserialize;
+    if let FetchResponse::V4 { responses, .. } = resp {
+        if let NullableBytes(Some(bytes)) = &responses
+            .get(0)
+            .unwrap()
+            .partition_responses
+            .get(0)
+            .unwrap()
+            .record_set
+        {
+            use serde::Deserialize;
 
-    //         let mut deserializer = Deserializer::from_bytes(&bytes, 0);
+            let mut deserializer = Deserializer::from_bytes(&bytes, 0);
 
-    //         while deserializer.len() != 0 {
-    //             let batch = RecordBatch::deserialize(&mut deserializer).unwrap();
-    //             println!(">>>>>>>> {:?}", batch);
+            while deserializer.len() != 0 {
+                let batch = RecordBatch::deserialize(&mut deserializer).unwrap();
+                println!(">>>>>>>> {:?}", batch);
 
-    //             match &(*batch.records)[0] {
-    //                 Record::Batch(Batch { value, .. }) => {
-    //                     println!("{:?}", String::from_utf8(value.to_vec()))
-    //                 }
-    //                 _ => println!("Nothing"),
-    //             }
-    //         }
-    //     }
-    // }
+                match &(*batch.records)[0] {
+                    Record::Batch(Batch { value, .. }) => {
+                        println!("{:?}", String::from_utf8(value.to_vec()))
+                    }
+                    _ => println!("Nothing"),
+                }
+            }
+        }
+    }
 
     // TODO: crc check
 
@@ -123,32 +123,18 @@ fn wip_requests() -> std::io::Result<()> {
             topic: "test".into(),
             data: vec![produce_request::v3::Data {
                 partition: 0,
-                record_set: Records(vec![
-                    // TODO: setup produced Batch correctly
-
-                    // Record(Batch {
-                    //     length: Varint,
-                    //     attributes: i8,
-                    //     timestamp_delta: Varint,
-                    //     offset_delta: Varint,
-                    //     key_length: Varint,
-                    //     key: Vec<u8>,
-                    //     value_len: Varint,
-                    //     value: Vec<u8>,
-                    //     header_len: Varint,
-                    //     headers: Vec<HeaderRecord>,
-                    // })
-                ]),
+                // TODO: build a serialize a RecordBatch
+                record_set: NullableBytes(None),
             }],
         }],
     };
 
-    let bytes = encode_req(&header, &req).unwrap();
-    stream.write(&bytes)?;
+    // let bytes = encode_req(&header, &req).unwrap();
+    // stream.write(&bytes)?;
 
-    let (header, resp) = read_resp::<_, ProduceResponse>(&mut stream, 3).unwrap();
-    println!("---> {:?}", header);
-    println!("---> {:?}", resp);
+    // let (header, resp) = read_resp::<_, ProduceResponse>(&mut stream, 3).unwrap();
+    // println!("---> {:?}", header);
+    // println!("---> {:?}", resp);
 
     Ok(())
 }
