@@ -1,7 +1,7 @@
 use std::io::prelude::*;
 use std::net::TcpStream;
 
-use kafka_protocol::codec::{encode_req, read_resp, Deserializer, Serializer};
+use kafka_protocol::codec::{encode_req, read_resp, Compression, Deserializer, Serializer};
 use kafka_protocol::model::*;
 use kafka_protocol::types::*;
 
@@ -108,11 +108,21 @@ fn wip_requests() -> std::io::Result<()> {
 
     ///////////////////////////////////////////////////////////////////
 
+    use chrono::Utc;
     use serde::Serialize;
 
     let mut serializer = Serializer::new();
-    let rec_batch = RecordBatch::builder().build(); // TODO: add records to the batch
-    rec_batch.serialize(&mut serializer).unwrap();
+    let rec_batch = RecordBatch::builder()
+        // .compression(Compression::Snappy)
+        .add_record(
+            Utc::now().timestamp(),
+            RecData::with_val(vec![99, 111, 117, 99, 111, 117])
+                .set_key(vec![1, 2])
+                .add_header("bob".into(), vec![3]),
+        )
+        .build();
+    println!("+++++++> {:?}", rec_batch);
+    // rec_batch.serialize(&mut serializer).unwrap();
 
     let header = HeaderRequest {
         api_key: ApiKey::Produce,
@@ -129,7 +139,8 @@ fn wip_requests() -> std::io::Result<()> {
             topic: "test".into(),
             data: vec![produce_request::v3::Data {
                 partition: 0,
-                record_set: NullableBytes::from(serializer.bytes()),
+                // record_set: NullableBytes::from(serializer.bytes()),
+                record_set: NullableBytes(None),
             }],
         }],
     };

@@ -7,5 +7,6 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
+chrono = "0.4"
 kafka-protocol = { path = "../kafka-protocol" }
 serde = "1.0"

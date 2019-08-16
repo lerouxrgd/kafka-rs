@@ -28,6 +28,12 @@ impl Deref for Varint {
     }
 }
 
+impl DerefMut for Varint {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varlong(pub i64);
 
@@ -35,6 +41,12 @@ impl Deref for Varlong {
     type Target = i64;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for Varlong {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -164,6 +176,35 @@ pub struct RecData {
     pub headers: Vec<HeaderRecord>,
 }
 
+impl RecData {
+    pub fn with_val(val: Vec<u8>) -> Self {
+        let mut rec_data = RecData::default();
+        rec_data.value_len = Varint(val.len() as i32);
+        rec_data.value = val;
+        rec_data.key_length = Varint(-1);
+        rec_data
+    }
+
+    pub fn set_key(mut self, key: Vec<u8>) -> Self {
+        self.key_length = Varint(key.len() as i32);
+        self.key = Some(key);
+        self
+    }
+
+    pub fn add_header(mut self, key: String, value: Vec<u8>) -> Self {
+        let key_length = Varint(key.len() as i32);
+        let value_length = Varint(value.len() as i32);
+        self.headers.push(HeaderRecord {
+            key_length,
+            key,
+            value,
+            value_length,
+        });
+        *self.header_len += 1;
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct HeaderRecord {
     pub key_length: Varint,
@@ -201,15 +242,30 @@ impl RecordBatchBuilder {
         let ts_delta = Varint((ts - self.rec_batch.first_timestamp) as i32);
         rec.timestamp_delta = ts_delta;
 
-        rec.offset_delta = Varint(self.rec_batch.records.len() as i32 + 1);
+        rec.offset_delta = Varint(self.rec_batch.records.len() as i32);
         self.rec_batch.records.deref_mut().push(Record::Data(rec));
 
         self
     }
 
-    pub fn compression(self, compression: Compression) -> Self {
+    pub fn compression(mut self, compression: Compression) -> Self {
+        let attr = &mut self.rec_batch.attributes;
         match compression {
-            _ => (), // TODO: set attributes appropriate bits
+            Compression::None => *attr &= 32760,
+            Compression::Gzip => *attr = (*attr | 1) & 32761,
+            Compression::Snappy => *attr = (*attr | 2) & 32762,
+            Compression::Lz4 => *attr = (*attr | 3) & 32763,
+            Compression::Zstd => *attr = (*attr | 4) & 32764,
+            _ => (),
+        }
+        self
+    }
+
+    pub fn ts_type(mut self, ts_type: TimestampType) -> Self {
+        let attr = &mut self.rec_batch.attributes;
+        match ts_type {
+            TimestampType::CreateTime => *attr &= 32759,
+            TimestampType::LogAppendTime => *attr |= 8,
         }
         self
     }
