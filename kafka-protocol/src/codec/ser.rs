@@ -4,7 +4,7 @@ use serde::ser::{self, Serialize};
 
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderRequest;
-use crate::types::{Bytes, NullableBytes, NullableString, Varint, Varlong};
+use crate::types::*;
 
 pub fn encode_req<T: Serialize>(header: &HeaderRequest, val: &T) -> Result<Vec<u8>> {
     let mut serializer = Serializer::new();
@@ -152,6 +152,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     where
         T: Serialize + ?Sized,
     {
+        // TODO: not needed ?
         val.serialize(&mut *self)?;
         Ok(())
     }
@@ -172,7 +173,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         match len {
-            None => Err(ser::Error::custom("seq length must be known")),
+            None => Ok(self),
             Some(len) => {
                 if len > std::i32::MAX as usize {
                     Err(ser::Error::custom(format!("seq is too long: {}", len)))
@@ -442,4 +443,68 @@ fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
             z >>= 7;
         }
     }
+}
+
+impl Serialize for RecData {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        use ser::Error;
+
+        let mut s = Serializer { buf: vec![] };
+
+        for header in self.headers.iter() {
+            header.serialize(&mut s).map_err(Error::custom)?;
+        }
+        self.header_len.serialize(&mut s).map_err(Error::custom)?;
+
+        serde_bytes::Serialize::serialize(&self.value, &mut s).map_err(Error::custom)?;
+        self.value_len.serialize(&mut s).map_err(Error::custom)?;
+
+        if *self.key_length > -1 {
+            if self.key.is_none() {
+                return Err(Error::custom(
+                    "RecData `key_length` is > -1 but `key` is None",
+                ));
+            }
+            serde_bytes::Serialize::serialize(&self.key.as_ref().unwrap(), &mut s)
+                .map_err(Error::custom)?;
+            self.key.serialize(&mut s).map_err(Error::custom)?;
+        }
+        self.key_length.serialize(&mut s).map_err(Error::custom)?;
+
+        self.offset_delta.serialize(&mut s).map_err(Error::custom)?;
+        self.timestamp_delta
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.attributes.serialize(&mut s).map_err(Error::custom)?;
+
+        let length = Varint(s.buf.len() as i32);
+        length.serialize(&mut s).map_err(Error::custom)?;
+
+        let mut bytes = s.buf;
+        bytes.reverse();
+        serializer.serialize_bytes(&bytes)
+    }
+}
+
+impl Serialize for RecordBatch {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        // TODO: implem similarly to RecData, also compress data if needed
+        unimplemented!()
+    }
+}
+
+pub(crate) fn ser_raw_string<S>(
+    string: &String,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: ser::Serializer,
+{
+    serializer.serialize_bytes(string.as_bytes())
 }

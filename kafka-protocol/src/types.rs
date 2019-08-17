@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::codec::Compression;
+use crate::codec::{ser, Compression};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableString(pub Option<String>);
@@ -76,18 +76,7 @@ impl Deref for NullableBytes {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Deserialize)]
 pub struct RecordBatch {
     pub base_offset: i64,
     pub batch_length: i32,
@@ -162,7 +151,7 @@ pub struct RecControl {
     pub r#type: i16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct RecData {
     pub length: Varint,
     pub attributes: i8,
@@ -208,8 +197,10 @@ impl RecData {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct HeaderRecord {
     pub key_length: Varint,
+    #[serde(serialize_with = "ser::ser_raw_string")]
     pub key: String,
     pub value_length: Varint,
+    #[serde(serialize_with = "serde_bytes::serialize")]
     pub value: Vec<u8>,
 }
 
