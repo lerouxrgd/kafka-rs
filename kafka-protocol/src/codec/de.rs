@@ -218,15 +218,11 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
         visitor.visit_i64(i64::from_be_bytes(bytes))
     }
 
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_u8<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        // TODO: only used for vanilla Vec<u8>, make dedicated RawBytes instead ?
-        ensure(1, "u8", *self.input.borrow())?;
-        let (val, rest) = self.input.borrow().split_at(1);
-        *self.input.borrow_mut() = rest;
-        visitor.visit_u8(val[0])
+        unimplemented!()
     }
 
     fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value>
@@ -937,6 +933,54 @@ impl<'de> Deserialize<'de> for Records {
     }
 }
 
+struct WrapBytes<'a> {
+    underlying: &'a mut Vec<u8>,
+    consumed: usize,
+}
+
+impl<'de, 'a> DeserializeSeed<'de> for WrapBytes<'a> {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct WrapBytesVisitor<'a> {
+            underlying: &'a mut Vec<u8>,
+            nb_read: Rc<RefCell<usize>>,
+        };
+
+        impl<'a> VisitorExt for WrapBytesVisitor<'a> {
+            fn consumed(&self) -> Rc<RefCell<usize>> {
+                self.nb_read.clone()
+            }
+        }
+
+        impl<'de, 'a> Visitor<'de> for WrapBytesVisitor<'a> {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "Vec<u8>")
+            }
+
+            fn visit_bytes<E>(self, bytes: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.underlying
+                    .write(&bytes[..*self.nb_read.borrow()])
+                    .map_err(de::Error::custom)?;
+                Ok(())
+            }
+        }
+
+        deserializer.deserialize_bytes(WrapBytesVisitor {
+            underlying: self.underlying,
+            nb_read: Rc::new(RefCell::new(self.consumed)),
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for Record {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Record, D::Error>
     where
@@ -955,20 +999,6 @@ impl<'de> Deserialize<'de> for RecData {
     where
         D: de::Deserializer<'de>,
     {
-        const NAME: &'static str = "RecData";
-        const FIELDS: &'static [&'static str] = &[
-            "length",
-            "attributes",
-            "timestamp_delta",
-            "offset_delta",
-            "key_length",
-            "key",
-            "value_len",
-            "value",
-            "header_len",
-            "headers",
-        ];
-
         struct RecDataVisitor;
 
         impl<'de> Visitor<'de> for RecDataVisitor {
@@ -1001,9 +1031,10 @@ impl<'de> Deserialize<'de> for RecData {
                 key_length = map.next_value::<Varint>().map(Some)?;
                 if **key_length.as_ref().unwrap() > -1 {
                     let mut buf = vec![];
-                    for _ in 0..**key_length.as_ref().unwrap() {
-                        buf.push(map.next_value::<u8>()?);
-                    }
+                    let _ = map.next_value_seed(WrapBytes {
+                        underlying: &mut buf,
+                        consumed: **key_length.as_ref().unwrap() as usize,
+                    });
                     key = Some(Some(buf));
                 } else {
                     key = Some(None);
@@ -1011,9 +1042,10 @@ impl<'de> Deserialize<'de> for RecData {
 
                 value_len = map.next_value::<Varint>().map(Some)?;
                 let mut buf = vec![];
-                for _ in 0..**value_len.as_ref().unwrap() {
-                    buf.push(map.next_value::<u8>()?);
-                }
+                let _ = map.next_value_seed(WrapBytes {
+                    underlying: &mut buf,
+                    consumed: **value_len.as_ref().unwrap() as usize,
+                });
                 value = Some(buf);
 
                 header_len = map.next_value::<Varint>().map(Some)?;
@@ -1040,6 +1072,20 @@ impl<'de> Deserialize<'de> for RecData {
             }
         }
 
+        const NAME: &'static str = "RecData";
+        const FIELDS: &'static [&'static str] = &[
+            "length",
+            "attributes",
+            "timestamp_delta",
+            "offset_delta",
+            "key_length",
+            "key",
+            "value_len",
+            "value",
+            "header_len",
+            "headers",
+        ];
+
         deserializer.deserialize_struct(NAME, FIELDS, RecDataVisitor)
     }
 }
@@ -1049,9 +1095,6 @@ impl<'de> Deserialize<'de> for HeaderRecord {
     where
         D: de::Deserializer<'de>,
     {
-        const NAME: &'static str = "HeaderRecord";
-        const FIELDS: &'static [&'static str] = &["key_length", "key", "value_length", "value"];
-
         struct HeaderRecordVisitor;
 
         impl<'de> Visitor<'de> for HeaderRecordVisitor {
@@ -1072,16 +1115,18 @@ impl<'de> Deserialize<'de> for HeaderRecord {
 
                 key_length = map.next_value::<Varint>().map(Some)?;
                 let mut buf = vec![];
-                for _ in 0..**key_length.as_ref().unwrap() {
-                    buf.push(map.next_value::<u8>()?);
-                }
+                let _ = map.next_value_seed(WrapBytes {
+                    underlying: &mut buf,
+                    consumed: **key_length.as_ref().unwrap() as usize,
+                });
                 key = Some(String::from_utf8(buf).map_err(de::Error::custom)?);
 
                 value_length = map.next_value::<Varint>().map(Some)?;
                 let mut buf = vec![];
-                for _ in 0..**value_length.as_ref().unwrap() {
-                    buf.push(map.next_value::<u8>()?);
-                }
+                let _ = map.next_value_seed(WrapBytes {
+                    underlying: &mut buf,
+                    consumed: **value_length.as_ref().unwrap() as usize,
+                });
                 value = Some(buf);
 
                 Ok(HeaderRecord {
@@ -1092,6 +1137,9 @@ impl<'de> Deserialize<'de> for HeaderRecord {
                 })
             }
         }
+
+        const NAME: &'static str = "HeaderRecord";
+        const FIELDS: &'static [&'static str] = &["key_length", "key", "value_length", "value"];
 
         deserializer.deserialize_struct(NAME, FIELDS, HeaderRecordVisitor)
     }
