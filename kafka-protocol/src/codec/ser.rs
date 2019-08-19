@@ -2,6 +2,7 @@ use std::io::prelude::*;
 
 use serde::ser::{self, Serialize};
 
+use crate::codec::compression::Compression;
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderRequest;
 use crate::types::*;
@@ -122,13 +123,12 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         ))
     }
 
-    fn serialize_some<T>(self, _val: &T) -> Result<()>
+    fn serialize_some<T>(self, val: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        Err(ser::Error::custom(
-            "invalid some, use a dedicated wrapper type",
-        ))
+        val.serialize(&mut *self)?;
+        Ok(())
     }
 
     fn serialize_unit(self) -> Result<()> {
@@ -452,6 +452,7 @@ impl Serialize for RecData {
     {
         use ser::Error;
 
+        // TODO: alternative to reversing everthing like push_front or something...
         let mut s = Serializer { buf: vec![] };
 
         for header in self.headers.iter() {
@@ -490,12 +491,67 @@ impl Serialize for RecData {
 }
 
 impl Serialize for RecordBatch {
-    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: ser::Serializer,
     {
-        // TODO: implem similarly to RecData, also compress data if needed
-        unimplemented!()
+        use ser::Error;
+
+        let mut s = Serializer { buf: vec![] };
+
+        for record in self.records.iter() {
+            record.serialize(&mut s).map_err(Error::custom)?;
+        }
+
+        match self.compression() {
+            Compression::None => (),
+
+            #[cfg(feature = "gzip")]
+            Compression::Gzip => {
+                use crate::codec::compression::gzip;
+                s.buf = gzip::compress(&s.buf).map_err(Error::custom)?;
+            }
+
+            _ => unimplemented!(), // TODO: other compression formats
+        }
+
+        self.records_len.serialize(&mut s).map_err(Error::custom)?;
+
+        self.base_sequence
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.producer_epoch
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.producer_id.serialize(&mut s).map_err(Error::custom)?;
+
+        self.max_timestamp
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.first_timestamp
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.last_offset_delta
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.attributes.serialize(&mut s).map_err(Error::custom)?;
+
+        // TODO: calculate crc
+        self.crc.serialize(&mut s).map_err(Error::custom)?;
+
+        self.magic.serialize(&mut s).map_err(Error::custom)?;
+        self.partition_leader_epoch
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+
+        let batch_length = s.buf.len() as i32;
+        batch_length.serialize(&mut s).map_err(Error::custom)?;
+
+        self.base_offset.serialize(&mut s).map_err(Error::custom)?;
+
+        let mut bytes = s.buf;
+        bytes.reverse();
+        serializer.serialize_bytes(&bytes)
     }
 }
 

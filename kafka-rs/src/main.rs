@@ -122,7 +122,9 @@ fn wip_requests() -> std::io::Result<()> {
         )
         .build();
     println!("+++++++> {:?}", rec_batch);
-    // rec_batch.serialize(&mut serializer).unwrap();
+    rec_batch.serialize(&mut serializer).unwrap();
+    let bytes = (&serializer.bytes()[4..]).to_vec();
+    println!("---> {:?}", bytes);
 
     let header = HeaderRequest {
         api_key: ApiKey::Produce,
@@ -139,18 +141,18 @@ fn wip_requests() -> std::io::Result<()> {
             topic: "test".into(),
             data: vec![produce_request::v3::Data {
                 partition: 0,
-                // record_set: NullableBytes::from(serializer.bytes()),
-                record_set: NullableBytes(None),
+                record_set: NullableBytes::from(bytes),
+                // record_set: NullableBytes(None),
             }],
         }],
     };
 
-    // let bytes = encode_req(&header, &req).unwrap();
-    // stream.write(&bytes)?;
+    let bytes = encode_req(&header, &req).unwrap();
+    stream.write(&bytes)?;
 
-    // let (header, resp) = read_resp::<_, ProduceResponse>(&mut stream, 3).unwrap();
-    // println!("---> {:?}", header);
-    // println!("---> {:?}", resp);
+    let (header, resp) = read_resp::<_, ProduceResponse>(&mut stream, 3).unwrap();
+    println!("---> {:?}", header);
+    println!("---> {:?}", resp);
 
     Ok(())
 }

@@ -99,6 +99,10 @@ impl RecordBatch {
         RecordBatchBuilder::new()
     }
 
+    pub fn compression(&self) -> Compression {
+        Compression::from_attr(self.attributes)
+    }
+
     pub fn timestamp_type(&self) -> TimestampType {
         match (self.attributes >> 3) & 1 {
             0 => TimestampType::CreateTime,
@@ -299,7 +303,6 @@ pub mod message_set {
             pub key: crate::types::NullableBytes,
             pub value: crate::types::NullableBytes,
         }
-
     }
     pub mod v1 {
         #[derive(
@@ -313,6 +316,5 @@ pub mod message_set {
             pub key: crate::types::NullableBytes,
             pub value: crate::types::NullableBytes,
         }
-
     }
 }

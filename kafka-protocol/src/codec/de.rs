@@ -66,7 +66,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         self.input.borrow().len()
     }
 
-    fn prepare_record(&mut self) -> Result<()> {
+    fn peek_attributes(&mut self) -> Result<Attributes> {
         // pub struct RecordBatch {
         //     pub base_offset: i64,
         //     pub batch_length: i32,
@@ -109,14 +109,13 @@ impl<'b, 'de> Deserializer<'b, 'de> {
 
         let is_control = ((attributes >> 5) & 1) == 1; // attributes bit 5 == 1
         let compression = Compression::from_attr(attributes);
-        self.record_attributes = Some(Attributes {
+
+        Ok(Attributes {
             is_control,
             compression,
             records_len,
             records_size,
-        });
-
-        Ok(())
+        })
     }
 }
 
@@ -400,9 +399,13 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
         V: Visitor<'de>,
     {
         if name == "RecordBatch" {
-            self.prepare_record()?;
+            self.record_attributes = Some(self.peek_attributes()?);
+            let res = visitor.visit_map(StructDeserializer::new(&mut self, fields));
+            self.record_attributes = None;
+            res
+        } else {
+            visitor.visit_map(StructDeserializer::new(&mut self, fields))
         }
-        visitor.visit_map(StructDeserializer::new(&mut self, fields))
     }
 
     fn deserialize_enum<V>(
