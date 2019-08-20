@@ -81,7 +81,7 @@ mod tests {
     fn serde_varint_varlong() {
         let i: i32 = 3;
         let mut bytes = vec![];
-        zig_i32(i, &mut bytes);
+        zig_i32(i, &mut bytes).unwrap();
         let mut rdr = Cursor::new(bytes);
         let (j, varint_size) = zag_i32(&mut rdr).unwrap();
         assert_eq!(i, j);
@@ -206,5 +206,4 @@ mod tests {
         println!("{:?}", header);
         println!("{:?}", resp);
     }
-
 }

@@ -1,5 +1,6 @@
 use std::io::prelude::*;
 
+use arrayvec::ArrayVec;
 use serde::ser::{self, Serialize};
 
 use crate::codec::compression::Compression;
@@ -118,9 +119,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_none(self) -> Result<()> {
-        Err(ser::Error::custom(
-            "invalid none, use a dedicated wrapper type",
-        ))
+        Ok(())
     }
 
     fn serialize_some<T>(self, val: &T) -> Result<()>
@@ -408,8 +407,8 @@ impl Serialize for Varint {
     where
         S: ser::Serializer,
     {
-        let mut buf = vec![];
-        zig_i32(self.0, &mut buf);
+        let mut buf = ArrayVec::<[u8; Varint::MAX_BYTES]>::new();
+        zig_i32(self.0, &mut buf).map_err(ser::Error::custom)?;
         serializer.serialize_bytes(&buf)
     }
 }
@@ -419,27 +418,26 @@ impl Serialize for Varlong {
     where
         S: ser::Serializer,
     {
-        let mut buf = vec![];
-        zig_i64(self.0, &mut buf);
+        let mut buf = ArrayVec::<[u8; Varlong::MAX_BYTES]>::new();
+        zig_i64(self.0, &mut buf).map_err(ser::Error::custom)?;
         serializer.serialize_bytes(&buf)
     }
 }
 
-pub(crate) fn zig_i32(n: i32, buf: &mut Vec<u8>) {
+pub(crate) fn zig_i32(n: i32, buf: impl Write) -> std::io::Result<usize> {
     zig_i64(n as i64, buf)
 }
 
-pub(crate) fn zig_i64(n: i64, buf: &mut Vec<u8>) {
+pub(crate) fn zig_i64(n: i64, buf: impl Write) -> std::io::Result<usize> {
     encode_variable(((n << 1) ^ (n >> 63)) as u64, buf)
 }
 
-fn encode_variable(mut z: u64, buf: &mut Vec<u8>) {
+fn encode_variable(mut z: u64, mut buf: impl Write) -> std::io::Result<usize> {
     loop {
         if z <= 0x7F {
-            buf.push((z & 0x7F) as u8);
-            break;
+            return buf.write(&[(z & 0x7F) as u8]);
         } else {
-            buf.push((0x80 | (z & 0x7F)) as u8);
+            buf.write(&[(0x80 | (z & 0x7F)) as u8])?;
             z >>= 7;
         }
     }
@@ -563,4 +561,18 @@ where
     S: ser::Serializer,
 {
     serializer.serialize_bytes(string.as_bytes())
+}
+
+pub(crate) fn ser_option_bytes<S>(
+    bytes: &Option<Vec<u8>>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: ser::Serializer,
+{
+    if let Some(bytes) = bytes {
+        serializer.serialize_bytes(bytes)
+    } else {
+        serializer.serialize_none()
+    }
 }

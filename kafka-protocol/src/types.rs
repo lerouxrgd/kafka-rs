@@ -21,6 +21,10 @@ impl Deref for NullableString {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varint(pub i32);
 
+impl Varint {
+    pub const MAX_BYTES: usize = 5;
+}
+
 impl Deref for Varint {
     type Target = i32;
     fn deref(&self) -> &Self::Target {
@@ -36,6 +40,10 @@ impl DerefMut for Varint {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varlong(pub i64);
+
+impl Varlong {
+    pub const MAX_BYTES: usize = 10;
+}
 
 impl Deref for Varlong {
     type Target = i64;
@@ -159,7 +167,7 @@ pub struct RecControl {
 pub struct RecData {
     pub length: Varint,
     pub attributes: i8,
-    pub timestamp_delta: Varint,
+    pub timestamp_delta: Varlong,
     pub offset_delta: Varint,
     pub key_length: Varint,
     pub key: Option<Vec<u8>>,
@@ -184,9 +192,14 @@ impl RecData {
         self
     }
 
-    pub fn add_header(mut self, key: String, value: Vec<u8>) -> Self {
+    pub fn add_header(mut self, key: String, value: Option<Vec<u8>>) -> Self {
         let key_length = Varint(key.len() as i32);
-        let value_length = Varint(value.len() as i32);
+        let value_length = if let Some(ref value) = value {
+            Varint(value.len() as i32)
+        } else {
+            Varint(-1)
+        };
+
         self.headers.push(HeaderRecord {
             key_length,
             key,
@@ -194,6 +207,7 @@ impl RecData {
             value_length,
         });
         *self.header_len += 1;
+
         self
     }
 }
@@ -204,8 +218,8 @@ pub struct HeaderRecord {
     #[serde(serialize_with = "ser::ser_raw_string")]
     pub key: String,
     pub value_length: Varint,
-    #[serde(serialize_with = "serde_bytes::serialize")]
-    pub value: Vec<u8>,
+    #[serde(serialize_with = "ser::ser_option_bytes")]
+    pub value: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -234,7 +248,7 @@ impl RecordBatchBuilder {
             self.rec_batch.max_timestamp = ts;
         }
 
-        let ts_delta = Varint((ts - self.rec_batch.first_timestamp) as i32);
+        let ts_delta = Varlong((ts - self.rec_batch.first_timestamp) as i64);
         rec.timestamp_delta = ts_delta;
 
         rec.offset_delta = Varint(self.rec_batch.records.len() as i32);

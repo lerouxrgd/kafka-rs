@@ -737,6 +737,7 @@ impl<'de> Deserialize<'de> for NullableString {
         })
     }
 }
+
 impl<'de> Deserialize<'de> for Varint {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Varint, D::Error>
     where
@@ -1017,7 +1018,7 @@ impl<'de> Deserialize<'de> for RecData {
             {
                 let length: Option<Varint>;
                 let attributes: Option<i8>;
-                let timestamp_delta: Option<Varint>;
+                let timestamp_delta: Option<Varlong>;
                 let offset_delta: Option<Varint>;
                 let key_length: Option<Varint>;
                 let key: Option<Option<Vec<u8>>>;
@@ -1028,7 +1029,7 @@ impl<'de> Deserialize<'de> for RecData {
 
                 length = map.next_value::<Varint>().map(Some)?;
                 attributes = map.next_value::<i8>().map(Some)?;
-                timestamp_delta = map.next_value::<Varint>().map(Some)?;
+                timestamp_delta = map.next_value::<Varlong>().map(Some)?;
                 offset_delta = map.next_value::<Varint>().map(Some)?;
 
                 key_length = map.next_value::<Varint>().map(Some)?;
@@ -1114,7 +1115,7 @@ impl<'de> Deserialize<'de> for HeaderRecord {
                 let key_length: Option<Varint>;
                 let key: Option<String>;
                 let value_length: Option<Varint>;
-                let value: Option<Vec<u8>>;
+                let value: Option<Option<Vec<u8>>>;
 
                 key_length = map.next_value::<Varint>().map(Some)?;
                 let mut buf = vec![];
@@ -1125,12 +1126,17 @@ impl<'de> Deserialize<'de> for HeaderRecord {
                 key = Some(String::from_utf8(buf).map_err(de::Error::custom)?);
 
                 value_length = map.next_value::<Varint>().map(Some)?;
-                let mut buf = vec![];
-                let _ = map.next_value_seed(WrapBytes {
-                    underlying: &mut buf,
-                    consumed: **value_length.as_ref().unwrap() as usize,
-                });
-                value = Some(buf);
+                if **value_length.as_ref().unwrap() > -1 {
+                    let mut buf = vec![];
+                    let _ = map.next_value_seed(WrapBytes {
+                        underlying: &mut buf,
+                        consumed: **value_length.as_ref().unwrap() as usize,
+                    });
+
+                    value = Some(Some(buf));
+                } else {
+                    value = Some(None);
+                }
 
                 Ok(HeaderRecord {
                     key_length: key_length.unwrap(),

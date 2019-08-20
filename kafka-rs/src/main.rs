@@ -118,7 +118,7 @@ fn wip_requests() -> std::io::Result<()> {
             Utc::now().timestamp(),
             RecData::with_val(vec![99, 111, 117, 99, 111, 117])
                 .set_key(vec![1, 2])
-                .add_header("bob".into(), vec![3]),
+                .add_header("bob".into(), Some(vec![3])),
         )
         .build();
     println!("+++++++> {:?}", rec_batch);
