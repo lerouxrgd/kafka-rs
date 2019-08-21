@@ -35,6 +35,10 @@ impl Varint {
         }
         return bytes as usize;
     }
+
+    pub fn size(&self) -> usize {
+        Varint::size_of(self.0)
+    }
 }
 
 impl Deref for Varint {
@@ -65,6 +69,10 @@ impl Varlong {
             v >>= 7;
         }
         return bytes as usize;
+    }
+
+    pub fn size(&self) -> usize {
+        Varlong::size_of(self.0)
     }
 }
 
@@ -235,17 +243,16 @@ impl RecData {
     }
 
     pub fn size(&self) -> usize {
-        let mut size =
-            1 + Varlong::size_of(*self.timestamp_delta) + Varint::size_of(*self.offset_delta);
+        let mut size = 1 + self.timestamp_delta.size() + self.offset_delta.size();
 
-        size += Varint::size_of(*self.key_length);
+        size += self.key_length.size();
         if let Some(ref key) = self.key {
             size += key.len();
         }
 
-        size += Varint::size_of(*self.value_len) + self.value.len();
+        size += self.value_len.size() + self.value.len();
 
-        size += Varint::size_of(*self.header_len);
+        size += self.header_len.size();
         for header in self.headers.iter() {
             size += header.size();
         }
@@ -266,9 +273,7 @@ pub struct HeaderRecord {
 
 impl HeaderRecord {
     pub fn size(&self) -> usize {
-        let mut size = Varint::size_of(*self.key_length)
-            + self.key.len()
-            + Varint::size_of(*self.value_length);
+        let mut size = self.key_length.size() + self.key.len() + self.value_length.size();
         if let Some(ref value) = self.value {
             size += value.len();
         }
@@ -311,6 +316,7 @@ impl RecordBatchBuilder {
         self
     }
 
+    // TODO: use #[allow(overflowing_literals)] and put flags as hexadecimal
     pub fn compression(mut self, compression: Compression) -> Self {
         let attr = &mut self.rec_batch.attributes;
         match compression {
