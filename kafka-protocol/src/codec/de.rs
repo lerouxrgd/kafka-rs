@@ -89,9 +89,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         ensure(batch_len_pos, "batch_length", *self.input.borrow())?;
         let mut bytes = [0u8; 4];
         bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
-        let records_size = (i32::from_be_bytes(bytes)
-            - (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8)
-            as usize;
+        let records_size = i32::from_be_bytes(bytes) as usize - RecordBatch::BASE_SIZE;
 
         // Find `attributes` first byte position and read it from current raw input
         let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;

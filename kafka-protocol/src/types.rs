@@ -134,6 +134,9 @@ pub struct RecordBatch {
 }
 
 impl RecordBatch {
+    /// Size of fields [partition_leader_epoch ..records_len]
+    pub const BASE_SIZE: usize = (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
+
     pub fn builder() -> RecordBatchBuilder {
         RecordBatchBuilder::new()
     }
@@ -161,6 +164,16 @@ impl RecordBatch {
             0 => false,
             _ => true,
         }
+    }
+
+    pub fn iter_recdata(&self) -> impl Iterator<Item = &RecData> {
+        self.records.deref().iter().filter_map(|rec| {
+            if let Record::Data(ref rec) = rec {
+                Some(rec)
+            } else {
+                None
+            }
+        })
     }
 }
 
