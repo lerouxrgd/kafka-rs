@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::codec::{ser, Compression};
+use crate::codec::ser::{ser_option_bytes, ser_raw_string};
+use crate::codec::Compression;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableString(pub Option<String>);
@@ -23,6 +24,17 @@ pub struct Varint(pub i32);
 
 impl Varint {
     pub const MAX_BYTES: usize = 5;
+
+    #[allow(overflowing_literals)]
+    pub fn size_of(val: i32) -> usize {
+        let mut v: i32 = (val << 1) ^ (val >> 31);
+        let mut bytes: i32 = 1;
+        while (v & 0xffffff80) != 0 {
+            bytes += 1;
+            v >>= 7;
+        }
+        return bytes as usize;
+    }
 }
 
 impl Deref for Varint {
@@ -43,6 +55,17 @@ pub struct Varlong(pub i64);
 
 impl Varlong {
     pub const MAX_BYTES: usize = 10;
+
+    #[allow(overflowing_literals)]
+    pub fn size_of(val: i64) -> usize {
+        let mut v: i64 = (val << 1) ^ (val >> 63);
+        let mut bytes: i64 = 1;
+        while (v & 0xffffffffffffff80) != 0 {
+            bytes += 1;
+            v >>= 7;
+        }
+        return bytes as usize;
+    }
 }
 
 impl Deref for Varlong {
@@ -210,16 +233,47 @@ impl RecData {
 
         self
     }
+
+    pub fn size(&self) -> usize {
+        let mut size =
+            1 + Varlong::size_of(*self.timestamp_delta) + Varint::size_of(*self.offset_delta);
+
+        size += Varint::size_of(*self.key_length);
+        if let Some(ref key) = self.key {
+            size += key.len();
+        }
+
+        size += Varint::size_of(*self.value_len) + self.value.len();
+
+        size += Varint::size_of(*self.header_len);
+        for header in self.headers.iter() {
+            size += header.size();
+        }
+
+        size
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct HeaderRecord {
     pub key_length: Varint,
-    #[serde(serialize_with = "ser::ser_raw_string")]
+    #[serde(serialize_with = "ser_raw_string")]
     pub key: String,
     pub value_length: Varint,
-    #[serde(serialize_with = "ser::ser_option_bytes")]
+    #[serde(serialize_with = "ser_option_bytes")]
     pub value: Option<Vec<u8>>,
+}
+
+impl HeaderRecord {
+    pub fn size(&self) -> usize {
+        let mut size = Varint::size_of(*self.key_length)
+            + self.key.len()
+            + Varint::size_of(*self.value_length);
+        if let Some(ref value) = self.value {
+            size += value.len();
+        }
+        size
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -450,16 +450,19 @@ impl Serialize for RecData {
     {
         use ser::Error;
 
-        // TODO: alternative to reversing everthing like push_front or something...
-        let mut s = Serializer { buf: vec![] };
+        let size = self.size();
+        let mut s = Serializer {
+            buf: Vec::with_capacity(size + Varint::size_of(size as i32)),
+        };
 
-        for header in self.headers.iter() {
-            header.serialize(&mut s).map_err(Error::custom)?;
-        }
-        self.header_len.serialize(&mut s).map_err(Error::custom)?;
+        let size = Varint(size as i32);
+        size.serialize(&mut s).map_err(Error::custom)?;
 
-        serde_bytes::Serialize::serialize(&self.value, &mut s).map_err(Error::custom)?;
-        self.value_len.serialize(&mut s).map_err(Error::custom)?;
+        self.offset_delta.serialize(&mut s).map_err(Error::custom)?;
+        self.timestamp_delta
+            .serialize(&mut s)
+            .map_err(Error::custom)?;
+        self.attributes.serialize(&mut s).map_err(Error::custom)?;
 
         if *self.key_length > -1 {
             if self.key.is_none() {
@@ -473,18 +476,15 @@ impl Serialize for RecData {
         }
         self.key_length.serialize(&mut s).map_err(Error::custom)?;
 
-        self.offset_delta.serialize(&mut s).map_err(Error::custom)?;
-        self.timestamp_delta
-            .serialize(&mut s)
-            .map_err(Error::custom)?;
-        self.attributes.serialize(&mut s).map_err(Error::custom)?;
+        serde_bytes::Serialize::serialize(&self.value, &mut s).map_err(Error::custom)?;
+        self.value_len.serialize(&mut s).map_err(Error::custom)?;
 
-        let length = Varint(s.buf.len() as i32);
-        length.serialize(&mut s).map_err(Error::custom)?;
+        for header in self.headers.iter() {
+            header.serialize(&mut s).map_err(Error::custom)?;
+        }
+        self.header_len.serialize(&mut s).map_err(Error::custom)?;
 
-        let mut bytes = s.buf;
-        bytes.reverse();
-        serializer.serialize_bytes(&bytes)
+        serializer.serialize_bytes(&s.buf)
     }
 }
 
@@ -494,6 +494,8 @@ impl Serialize for RecordBatch {
         S: ser::Serializer,
     {
         use ser::Error;
+
+        // TODO: rewrite this like RecData
 
         let mut s = Serializer { buf: vec![] };
 

@@ -96,6 +96,10 @@ mod tests {
         let bytes = encode_single(&i).unwrap();
         let j = decode_single::<Varlong>(&bytes, None).unwrap();
         assert_eq!(i, j);
+
+        let i = Varint::size_of(12121662);
+        let j = encode_single(&Varint(12121662)).unwrap();
+        assert_eq!(i, j.len());
     }
 
     #[test]
