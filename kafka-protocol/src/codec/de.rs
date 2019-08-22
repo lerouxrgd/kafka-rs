@@ -816,7 +816,7 @@ impl<'de> Deserialize<'de> for Varlong {
     }
 }
 
-pub(crate) fn zag_i32<R: Read>(reader: &mut R) -> Result<(i32, usize)> {
+pub(crate) fn zag_i32(reader: &mut impl Read) -> Result<(i32, usize)> {
     let (i, nb_read) = zag_i64(reader)?;
     if i < i64::from(i32::min_value()) || i > i64::from(i32::max_value()) {
         Err(de::Error::custom("int out of range"))
@@ -825,7 +825,7 @@ pub(crate) fn zag_i32<R: Read>(reader: &mut R) -> Result<(i32, usize)> {
     }
 }
 
-pub(crate) fn zag_i64<R: Read>(reader: &mut R) -> Result<(i64, usize)> {
+pub(crate) fn zag_i64(reader: &mut impl Read) -> Result<(i64, usize)> {
     let (z, nb_read) = decode_variable(reader)?;
     Ok(if z & 0x1 == 0 {
         ((z >> 1) as i64, nb_read)
@@ -834,14 +834,14 @@ pub(crate) fn zag_i64<R: Read>(reader: &mut R) -> Result<(i64, usize)> {
     })
 }
 
-fn decode_variable<R: Read>(reader: &mut R) -> Result<(u64, usize)> {
+fn decode_variable(reader: &mut impl Read) -> Result<(u64, usize)> {
     let mut i = 0u64;
     let mut buf = [0u8; 1];
 
     let mut j = 0;
     loop {
         if j > 9 {
-            // if j * 7 > 64
+            // j * 7 > 64
             return Err(de::Error::custom(
                 "overflow when decoding zigzag integer value",
             ));
@@ -937,7 +937,7 @@ impl<'de> Deserialize<'de> for Records {
 
 struct WrapBytes<'a> {
     underlying: &'a mut Vec<u8>,
-    consumed: usize,
+    nb_read: usize,
 }
 
 impl<'de, 'a> DeserializeSeed<'de> for WrapBytes<'a> {
@@ -978,7 +978,7 @@ impl<'de, 'a> DeserializeSeed<'de> for WrapBytes<'a> {
 
         deserializer.deserialize_bytes(WrapBytesVisitor {
             underlying: self.underlying,
-            nb_read: Rc::new(RefCell::new(self.consumed)),
+            nb_read: Rc::new(RefCell::new(self.nb_read)),
         })
     }
 }
@@ -1035,7 +1035,7 @@ impl<'de> Deserialize<'de> for RecData {
                     let mut buf = vec![];
                     let _ = map.next_value_seed(WrapBytes {
                         underlying: &mut buf,
-                        consumed: **key_length.as_ref().unwrap() as usize,
+                        nb_read: **key_length.as_ref().unwrap() as usize,
                     });
                     key = Some(Some(buf));
                 } else {
@@ -1046,7 +1046,7 @@ impl<'de> Deserialize<'de> for RecData {
                 let mut buf = vec![];
                 let _ = map.next_value_seed(WrapBytes {
                     underlying: &mut buf,
-                    consumed: **value_len.as_ref().unwrap() as usize,
+                    nb_read: **value_len.as_ref().unwrap() as usize,
                 });
                 value = Some(buf);
 
@@ -1057,7 +1057,7 @@ impl<'de> Deserialize<'de> for RecData {
                 }
                 headers = Some(buf);
 
-                let batch = RecData {
+                Ok(RecData {
                     length: length.unwrap(),
                     attributes: attributes.unwrap(),
                     timestamp_delta: timestamp_delta.unwrap(),
@@ -1068,9 +1068,7 @@ impl<'de> Deserialize<'de> for RecData {
                     value: value.unwrap(),
                     header_len: header_len.unwrap(),
                     headers: headers.unwrap(),
-                };
-
-                Ok(batch)
+                })
             }
         }
 
@@ -1119,7 +1117,7 @@ impl<'de> Deserialize<'de> for HeaderRecord {
                 let mut buf = vec![];
                 let _ = map.next_value_seed(WrapBytes {
                     underlying: &mut buf,
-                    consumed: **key_length.as_ref().unwrap() as usize,
+                    nb_read: **key_length.as_ref().unwrap() as usize,
                 });
                 key = Some(String::from_utf8(buf).map_err(de::Error::custom)?);
 
@@ -1128,7 +1126,7 @@ impl<'de> Deserialize<'de> for HeaderRecord {
                     let mut buf = vec![];
                     let _ = map.next_value_seed(WrapBytes {
                         underlying: &mut buf,
-                        consumed: **value_length.as_ref().unwrap() as usize,
+                        nb_read: **value_length.as_ref().unwrap() as usize,
                     });
 
                     value = Some(Some(buf));

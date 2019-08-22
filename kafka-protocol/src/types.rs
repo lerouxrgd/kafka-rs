@@ -177,7 +177,7 @@ impl RecordBatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Records(pub Vec<Record>);
 
 impl Deref for Records {
@@ -247,8 +247,8 @@ impl RecData {
         self.headers.push(HeaderRecord {
             key_length,
             key,
-            value,
             value_length,
+            value,
         });
         *self.header_len += 1;
 
@@ -329,25 +329,26 @@ impl RecordBatchBuilder {
         self
     }
 
-    // TODO: use #[allow(overflowing_literals)] and put flags as hexadecimal
+    #[allow(overflowing_literals)]
     pub fn compression(mut self, compression: Compression) -> Self {
         let attr = &mut self.rec_batch.attributes;
         match compression {
-            Compression::None => *attr &= 32760,
-            Compression::Gzip => *attr = (*attr | 1) & 32761,
-            Compression::Snappy => *attr = (*attr | 2) & 32762,
-            Compression::Lz4 => *attr = (*attr | 3) & 32763,
-            Compression::Zstd => *attr = (*attr | 4) & 32764,
+            Compression::None => *attr &= 0xfff8,
+            Compression::Gzip => *attr = (*attr | 0x0001) & 0xfff9,
+            Compression::Snappy => *attr = (*attr | 0x0002) & 0xfffa,
+            Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
+            Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
             _ => (),
         }
         self
     }
 
+    #[allow(overflowing_literals)]
     pub fn ts_type(mut self, ts_type: TimestampType) -> Self {
         let attr = &mut self.rec_batch.attributes;
         match ts_type {
-            TimestampType::CreateTime => *attr &= 32759,
-            TimestampType::LogAppendTime => *attr |= 8,
+            TimestampType::CreateTime => *attr &= 0xfff7,
+            TimestampType::LogAppendTime => *attr |= 0x0008,
         }
         self
     }
