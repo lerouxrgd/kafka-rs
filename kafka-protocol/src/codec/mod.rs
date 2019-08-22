@@ -1,4 +1,5 @@
 mod compression;
+mod crc32;
 
 pub mod de;
 pub mod error;

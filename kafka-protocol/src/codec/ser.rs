@@ -4,6 +4,7 @@ use arrayvec::ArrayVec;
 use serde::ser::{self, Serialize};
 
 use crate::codec::compression::Compression;
+use crate::codec::crc32::crc32c;
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderRequest;
 use crate::types::*;
@@ -450,20 +451,23 @@ impl Serialize for RecData {
     {
         use ser::Error;
 
-        let size = self.size();
+        let length = self.size();
         let mut s = Serializer {
-            buf: Vec::with_capacity(size + Varint::size_of(size as i32)),
+            buf: Vec::with_capacity(length + Varint::size_of(length as i32)),
         };
 
-        let size = Varint(size as i32);
-        size.serialize(&mut s).map_err(Error::custom)?;
+        let length = Varint(length as i32);
+        length.serialize(&mut s).map_err(Error::custom)?;
 
-        self.offset_delta.serialize(&mut s).map_err(Error::custom)?;
+        self.attributes.serialize(&mut s).map_err(Error::custom)?;
+
         self.timestamp_delta
             .serialize(&mut s)
             .map_err(Error::custom)?;
-        self.attributes.serialize(&mut s).map_err(Error::custom)?;
 
+        self.offset_delta.serialize(&mut s).map_err(Error::custom)?;
+
+        self.key_length.serialize(&mut s).map_err(Error::custom)?;
         if *self.key_length > -1 {
             if self.key.is_none() {
                 return Err(Error::custom(
@@ -472,17 +476,15 @@ impl Serialize for RecData {
             }
             serde_bytes::Serialize::serialize(&self.key.as_ref().unwrap(), &mut s)
                 .map_err(Error::custom)?;
-            self.key.serialize(&mut s).map_err(Error::custom)?;
         }
-        self.key_length.serialize(&mut s).map_err(Error::custom)?;
 
-        serde_bytes::Serialize::serialize(&self.value, &mut s).map_err(Error::custom)?;
         self.value_len.serialize(&mut s).map_err(Error::custom)?;
+        serde_bytes::Serialize::serialize(&self.value, &mut s).map_err(Error::custom)?;
 
+        self.header_len.serialize(&mut s).map_err(Error::custom)?;
         for header in self.headers.iter() {
             header.serialize(&mut s).map_err(Error::custom)?;
         }
-        self.header_len.serialize(&mut s).map_err(Error::custom)?;
 
         serializer.serialize_bytes(&s.buf)
     }
@@ -534,7 +536,6 @@ impl Serialize for RecordBatch {
 
         self.magic.serialize(&mut s).map_err(Error::custom)?;
 
-        // TODO: calculate crc
         self.crc.serialize(&mut s).map_err(Error::custom)?;
 
         self.attributes.serialize(&mut s).map_err(Error::custom)?;
@@ -564,6 +565,9 @@ impl Serialize for RecordBatch {
         self.records_len.serialize(&mut s).map_err(Error::custom)?;
 
         serde_bytes::Serialize::serialize(&records_bytes, &mut s).map_err(Error::custom)?;
+
+        let crc = crc32c(&s.buf[21..]);
+        &s.buf[17..21].copy_from_slice(&crc.to_be_bytes());
 
         serializer.serialize_bytes(&s.buf)
     }

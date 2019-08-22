@@ -104,7 +104,7 @@ fn wip_requests() -> std::io::Result<()> {
         }
     }
 
-    // TODO: crc check
+    // TODO: crc check when deserializing
 
     ///////////////////////////////////////////////////////////////////
 
@@ -124,7 +124,6 @@ fn wip_requests() -> std::io::Result<()> {
     println!("+++++++> {:?}", rec_batch);
     rec_batch.serialize(&mut serializer).unwrap();
     let bytes = (&serializer.bytes()[4..]).to_vec();
-    println!("---> {:?}", bytes);
 
     let header = HeaderRequest {
         api_key: ApiKey::Produce,
