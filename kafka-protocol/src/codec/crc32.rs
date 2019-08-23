@@ -1,7 +1,6 @@
-// Copied from rust-snappy
+// Copied from rust-snappy (snap)
 // https://github.com/BurntSushi/rust-snappy/blob/master/src/crc32.rs
 
-use byteorder::{ByteOrder, LittleEndian as LE};
 use lazy_static::lazy_static;
 
 const CASTAGNOLI_POLY: u32 = 0x82f63b78;
@@ -30,9 +29,11 @@ pub fn crc32c(buf: &[u8]) -> u32 {
 fn crc32c_slice8(mut buf: &[u8]) -> u32 {
     let tab = &*TABLE;
     let tab8 = &*TABLE16;
+    let mut bytes = [0u8; 4];
     let mut crc: u32 = !0;
     while buf.len() >= 8 {
-        crc ^= LE::read_u32(&buf[0..4]);
+        bytes.copy_from_slice(&buf[0..4]);
+        crc ^= u32::from_le_bytes(bytes);
         crc = tab8[0][buf[7] as usize]
             ^ tab8[1][buf[6] as usize]
             ^ tab8[2][buf[5] as usize]
