@@ -308,6 +308,9 @@ impl RecordBatchBuilder {
     pub fn new() -> Self {
         let mut rec_batch = RecordBatch::default();
         rec_batch.magic = 2;
+        rec_batch.producer_id = -1;
+        rec_batch.producer_epoch = -1;
+        rec_batch.base_sequence = -1;
         RecordBatchBuilder { rec_batch }
     }
 
@@ -339,16 +342,6 @@ impl RecordBatchBuilder {
             Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
             Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
             _ => (),
-        }
-        self
-    }
-
-    #[allow(overflowing_literals)]
-    pub fn ts_type(mut self, ts_type: TimestampType) -> Self {
-        let attr = &mut self.rec_batch.attributes;
-        match ts_type {
-            TimestampType::CreateTime => *attr &= 0xfff7,
-            TimestampType::LogAppendTime => *attr |= 0x0008,
         }
         self
     }

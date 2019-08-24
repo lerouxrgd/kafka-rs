@@ -1153,7 +1153,7 @@ impl<'de> Deserialize<'de> for HeaderRecord {
 fn ensure(size: usize, what: &str, slice: &[u8]) -> Result<()> {
     if slice.len() < size {
         Err(de::Error::custom(format!(
-            "Not enough bytes ({:?}) to deserialize {:?} of size {:?}",
+            "Not enough bytes ({:?}) to deserialize {} of size {:?}",
             slice.len(),
             what,
             size

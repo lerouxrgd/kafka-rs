@@ -116,7 +116,11 @@ fn wip_requests() -> std::io::Result<()> {
         // .compression(Compression::Snappy)
         .add_record(
             Utc::now().timestamp(),
-            RecData::with_val(vec![99, 111, 117, 99, 111, 117])
+            RecData::with_val(vec![99, 111, 117, 99, 111, 117]),
+        )
+        .add_record(
+            Utc::now().timestamp(),
+            RecData::with_val(vec![98, 111, 117, 98, 111, 117])
                 .set_key(vec![1, 2])
                 .add_header("bob".into(), Some(vec![3])),
         )
