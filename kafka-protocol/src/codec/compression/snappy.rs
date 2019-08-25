@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 
-use snap::Decoder;
+use snap::{Decoder, Encoder};
 
 const JAVA_MAGIC: &'static [u8] = &[0x82, b'S', b'N', b'A', b'P', b'P', b'Y', 0];
 
@@ -42,6 +42,10 @@ pub fn decompress(src: &[u8]) -> std::io::Result<Vec<u8>> {
 
         Ok(decompressed)
     }
+}
+
+pub fn compress(src: &[u8]) -> std::io::Result<Vec<u8>> {
+    Encoder::new().compress_vec(src).map_err(Error::from)
 }
 
 fn ensure(size: usize, slice: &[u8]) -> std::io::Result<()> {

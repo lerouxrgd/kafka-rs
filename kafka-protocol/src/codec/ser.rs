@@ -512,7 +512,30 @@ impl Serialize for RecordBatch {
                 records_bytes = gzip::compress(&records_bytes).map_err(Error::custom)?;
             }
 
-            _ => unimplemented!(), // TODO: other compression formats
+            #[cfg(feature = "snappy")]
+            Compression::Snappy => {
+                use crate::codec::compression::snappy;
+                records_bytes = snappy::compress(&records_bytes).map_err(Error::custom)?;
+            }
+
+            #[cfg(feature = "lz4")]
+            Compression::Lz4 => {
+                use crate::codec::compression::lz4;
+                records_bytes = lz4::compress(&records_bytes).map_err(Error::custom)?;
+            }
+
+            #[cfg(feature = "zstd")]
+            Compression::Zstd => {
+                use crate::codec::compression::zstd;
+                records_bytes = zstd::compress(&records_bytes).map_err(Error::custom)?;
+            }
+
+            _ => {
+                return Err(Error::custom(format!(
+                    "Unsupported compression format: {:?}",
+                    self.compression()
+                )));
+            }
         }
 
         let batch_length = RecordBatch::BASE_SIZE + records_bytes.len();
