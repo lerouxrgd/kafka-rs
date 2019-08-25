@@ -124,7 +124,7 @@ fn wip_requests() -> std::io::Result<()> {
 
     let mut serializer = Serializer::new();
     let rec_batch = RecordBatch::builder()
-        // .compression(Compression::Snappy)
+        .compression(Compression::Gzip)
         .add_record(
             Utc::now().timestamp(),
             RecData::with_val(vec![99, 111, 117, 99, 111, 117]),

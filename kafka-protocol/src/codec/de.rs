@@ -8,6 +8,7 @@ use serde::de::{
 };
 
 use crate::codec::compression::Compression;
+use crate::codec::crc32::crc32c;
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
 use crate::types::*;
@@ -76,7 +77,20 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         ensure(batch_len_pos, "batch_length", *self.input.borrow())?;
         let mut bytes = [0u8; 4];
         bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
-        let records_size = i32::from_be_bytes(bytes) as usize - RecordBatch::BASE_SIZE;
+        let batch_length = i32::from_be_bytes(bytes) as usize;
+        let records_size = batch_length - RecordBatch::BASE_SIZE;
+
+        // Find `crc` first byte position and read it from current raw input
+        let crc_pos = (8 * batch_len_pos + 32 + 8 + 32) / 8;
+        ensure(crc_pos, "crc", *self.input.borrow())?;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(&self.input.borrow()[crc_pos - 4..crc_pos]);
+        let crc = u32::from_be_bytes(bytes);
+
+        let crc_check = crc32c(&self.input.borrow()[crc_pos..((64 + 32) / 8 + batch_length)]);
+        if crc != crc_check {
+            return Err(de::Error::custom("Invalid crc, record is corrupted"));
+        }
 
         // Find `attributes` first byte position and read it from current raw input
         let attr_pos = (8 * batch_len_pos + 32 + 8 + 32 + 16) / 8;
