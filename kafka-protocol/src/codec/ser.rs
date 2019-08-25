@@ -69,10 +69,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    fn serialize_u8(self, val: u8) -> Result<()> {
-        // TODO: not needed ?
-        self.buf.write(&val.to_be_bytes())?;
-        Ok(())
+    fn serialize_u8(self, _val: u8) -> Result<()> {
+        unimplemented!()
     }
 
     fn serialize_u16(self, _val: u16) -> Result<()> {
@@ -148,13 +146,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         unimplemented!()
     }
 
-    fn serialize_newtype_struct<T>(self, _name: &'static str, val: &T) -> Result<()>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, _val: &T) -> Result<()>
     where
         T: Serialize + ?Sized,
     {
-        // TODO: not needed ?
-        val.serialize(&mut *self)?;
-        Ok(())
+        unimplemented!()
     }
 
     fn serialize_newtype_variant<T>(

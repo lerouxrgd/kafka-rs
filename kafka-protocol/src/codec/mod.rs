@@ -6,7 +6,7 @@ pub mod error;
 pub mod ser;
 
 pub use crate::codec::compression::Compression;
-pub use crate::codec::de::{decode_resp, read_resp, Deserializer};
+pub use crate::codec::de::{decode_resp, Deserializer};
 pub use crate::codec::error::{Error, Result};
 pub use crate::codec::ser::{encode_req, Serializer};
 
@@ -40,6 +40,19 @@ mod tests {
         } else {
             Err(serde::de::Error::custom(format!("bytes remaining",)))
         }
+    }
+
+    pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
+    where
+        R: std::io::Read,
+        T: serde::de::DeserializeOwned,
+    {
+        let mut buf = [0u8; 4];
+        rdr.read_exact(&mut buf)?;
+        let size = i32::from_be_bytes(buf);
+        let mut bytes = vec![0; size as usize];
+        rdr.read_exact(&mut bytes)?;
+        decode_resp::<T>(&bytes, version)
     }
 
     #[test]

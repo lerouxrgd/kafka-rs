@@ -1,7 +1,7 @@
 use std::cell::RefCell;
+use std::fmt;
 use std::io::prelude::*;
 use std::rc::Rc;
-use std::{fmt, io};
 
 use serde::de::{
     self, Deserialize, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
@@ -11,19 +11,6 @@ use crate::codec::compression::Compression;
 use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
 use crate::types::*;
-
-pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> Result<(HeaderResponse, T)>
-where
-    R: io::Read,
-    T: de::DeserializeOwned,
-{
-    let mut buf = [0u8; 4];
-    rdr.read_exact(&mut buf)?;
-    let size = i32::from_be_bytes(buf);
-    let mut bytes = vec![0; size as usize];
-    rdr.read_exact(&mut bytes)?;
-    decode_resp::<T>(&bytes, version)
-}
 
 pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
 where
