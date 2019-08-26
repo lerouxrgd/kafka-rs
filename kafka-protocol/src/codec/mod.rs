@@ -25,7 +25,7 @@ mod tests {
     fn encode_single<T: Serialize>(val: &T) -> Result<Vec<u8>> {
         let mut serializer = Serializer::new();
         val.serialize(&mut serializer)?;
-        Ok(serializer.buf[4..].to_vec())
+        Ok(serializer.buf)
     }
 
     fn decode_single<'a, T>(input: &'a [u8], version: Option<usize>) -> Result<T>

@@ -78,7 +78,7 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         let mut bytes = [0u8; 4];
         bytes.copy_from_slice(&self.input.borrow()[batch_len_pos - 4..batch_len_pos]);
         let batch_length = i32::from_be_bytes(bytes) as usize;
-        let records_size = batch_length - RecordBatch::BASE_SIZE;
+        let records_size = batch_length - RecordBatch::INNER_SIZE;
 
         // Find `crc` first byte position and read it from current raw input
         let crc_pos = (8 * batch_len_pos + 32 + 8 + 32) / 8;

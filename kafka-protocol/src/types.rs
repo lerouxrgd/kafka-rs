@@ -118,10 +118,10 @@ impl Deref for NullableBytes {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Deserialize)]
 pub struct RecordBatch {
     pub base_offset: i64,
-    pub batch_length: i32,
+    pub(crate) batch_length: i32,
     pub partition_leader_epoch: i32,
-    pub magic: i8,
-    pub crc: u32,
+    pub(crate) magic: i8,
+    pub(crate) crc: u32,
     pub attributes: i16,
     pub last_offset_delta: i32,
     pub first_timestamp: i64,
@@ -129,13 +129,13 @@ pub struct RecordBatch {
     pub producer_id: i64,
     pub producer_epoch: i16,
     pub base_sequence: i32,
-    pub records_len: i32,
-    pub records: Records,
+    pub(crate) records_len: i32,
+    pub(crate) records: Records,
 }
 
 impl RecordBatch {
     /// Size of fields [partition_leader_epoch ..records_len]
-    pub const BASE_SIZE: usize = (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
+    pub(crate) const INNER_SIZE: usize = (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
 
     pub fn builder() -> RecordBatchBuilder {
         RecordBatchBuilder::new()
@@ -166,8 +166,27 @@ impl RecordBatch {
         }
     }
 
-    pub fn iter_recdata(&self) -> impl Iterator<Item = &RecData> {
-        self.records.deref().iter().filter_map(|rec| {
+    pub fn raw_size(&self) -> usize {
+        let records_size: usize = self.iter().map(|rec| rec.size()).sum();
+        (64 + 32) / 8 + RecordBatch::INNER_SIZE + records_size
+    }
+
+    pub fn len(&self) -> usize {
+        self.records_len as usize
+    }
+
+    pub fn into_iter(self) -> impl IntoIterator<Item = RecData> {
+        self.records.0.into_iter().filter_map(|rec| {
+            if let Record::Data(rec) = rec {
+                Some(rec)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RecData> {
+        self.records.0.iter().filter_map(|rec| {
             if let Record::Data(ref rec) = rec {
                 Some(rec)
             } else {
@@ -209,23 +228,23 @@ pub struct RecControl {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct RecData {
-    pub length: Varint,
+    pub(crate) length: Varint,
     pub attributes: i8,
-    pub timestamp_delta: Varlong,
-    pub offset_delta: Varint,
-    pub key_length: Varint,
+    pub(crate) timestamp_delta: Varlong,
+    pub(crate) offset_delta: Varint,
+    pub(crate) key_length: Varint,
     pub key: Option<Vec<u8>>,
-    pub value_len: Varint,
+    pub(crate) value_len: Varint,
     pub value: Vec<u8>,
-    pub header_len: Varint,
+    pub(crate) header_len: Varint,
     pub headers: Vec<HeaderRecord>,
 }
 
 impl RecData {
-    pub fn with_val(val: Vec<u8>) -> Self {
+    pub fn new(value: Vec<u8>) -> Self {
         let mut rec_data = RecData::default();
-        rec_data.value_len = Varint(val.len() as i32);
-        rec_data.value = val;
+        rec_data.value_len = Varint(value.len() as i32);
+        rec_data.value = value;
         rec_data.key_length = Varint(-1);
         rec_data
     }
@@ -255,6 +274,14 @@ impl RecData {
         self
     }
 
+    pub fn offset_delta(&self) -> i32 {
+        *self.offset_delta
+    }
+
+    pub fn timestamp_delta(&self) -> i64 {
+        *self.timestamp_delta
+    }
+
     pub fn size(&self) -> usize {
         let mut size = 1 + self.timestamp_delta.size() + self.offset_delta.size();
 
@@ -276,10 +303,10 @@ impl RecData {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct HeaderRecord {
-    pub key_length: Varint,
+    pub(crate) key_length: Varint,
     #[serde(serialize_with = "ser_raw_string")]
     pub key: String,
-    pub value_length: Varint,
+    pub(crate) value_length: Varint,
     #[serde(serialize_with = "ser_option_bytes")]
     pub value: Option<Vec<u8>>,
 }
@@ -314,6 +341,20 @@ impl RecordBatchBuilder {
         RecordBatchBuilder { rec_batch }
     }
 
+    #[allow(overflowing_literals)]
+    pub fn compression(mut self, compression: Compression) -> Self {
+        let attr = &mut self.rec_batch.attributes;
+        match compression {
+            Compression::None => *attr &= 0xfff8,
+            Compression::Gzip => *attr = (*attr | 0x0001) & 0xfff9,
+            Compression::Snappy => *attr = (*attr | 0x0002) & 0xfffa,
+            Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
+            Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
+            _ => (),
+        }
+        self
+    }
+
     pub fn add_record(mut self, ts: i64, mut rec: RecData) -> Self {
         if self.rec_batch.first_timestamp == 0 {
             self.rec_batch.first_timestamp = ts;
@@ -332,18 +373,8 @@ impl RecordBatchBuilder {
         self
     }
 
-    #[allow(overflowing_literals)]
-    pub fn compression(mut self, compression: Compression) -> Self {
-        let attr = &mut self.rec_batch.attributes;
-        match compression {
-            Compression::None => *attr &= 0xfff8,
-            Compression::Gzip => *attr = (*attr | 0x0001) & 0xfff9,
-            Compression::Snappy => *attr = (*attr | 0x0002) & 0xfffa,
-            Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
-            Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
-            _ => (),
-        }
-        self
+    pub fn raw_size(&self) -> usize {
+        self.rec_batch.raw_size()
     }
 
     pub fn build(self) -> RecordBatch {

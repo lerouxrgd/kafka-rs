@@ -105,12 +105,9 @@ fn wip_requests() -> std::io::Result<()> {
                 let batch = RecordBatch::deserialize(&mut deserializer).unwrap();
                 println!(">>>>>>>> {:?}", batch);
 
-                match &(*batch.records)[0] {
-                    Record::Data(RecData { value, .. }) => {
-                        println!("{:?}", String::from_utf8(value.to_vec()))
-                    }
-                    _ => println!("Nothing"),
-                }
+                batch
+                    .iter()
+                    .for_each(|rec| println!("{:?}", String::from_utf8(rec.value.to_vec())));
             }
         }
     }
@@ -125,12 +122,12 @@ fn wip_requests() -> std::io::Result<()> {
         .compression(Compression::Snappy)
         .add_record(
             Utc::now().timestamp(),
-            RecData::with_val(vec![99, 111, 117, 99, 111, 117]),
+            RecData::new(vec![99, 111, 117, 99, 111, 117]),
         )
         .build();
     println!("+++++++> {:?}", rec_batch);
     rec_batch.serialize(&mut serializer).unwrap();
-    let bytes = (&serializer.bytes()[4..]).to_vec();
+    let bytes = serializer.bytes();
 
     let header = HeaderRequest {
         api_key: ApiKey::Produce,

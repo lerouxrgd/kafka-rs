@@ -10,10 +10,10 @@ use crate::model::HeaderRequest;
 use crate::types::*;
 
 pub fn encode_req<T: Serialize>(header: &HeaderRequest, val: &T) -> Result<Vec<u8>> {
-    let mut serializer = Serializer::new();
+    let mut serializer = Serializer::new_sized();
     header.serialize(&mut serializer)?;
     val.serialize(&mut serializer)?;
-    Ok(serializer.bytes())
+    Ok(serializer.bytes_sized())
 }
 
 pub struct Serializer {
@@ -22,10 +22,18 @@ pub struct Serializer {
 
 impl Serializer {
     pub fn new() -> Self {
+        Serializer { buf: vec![] }
+    }
+
+    pub fn bytes(self) -> Vec<u8> {
+        self.buf
+    }
+
+    fn new_sized() -> Self {
         Serializer { buf: vec![0; 4] }
     }
 
-    pub fn bytes(mut self) -> Vec<u8> {
+    fn bytes_sized(mut self) -> Vec<u8> {
         let size = self.buf.len() as i32 - 4;
         self.buf.splice(..4, (&size.to_be_bytes()).iter().cloned());
         self.buf
@@ -493,7 +501,7 @@ impl Serialize for RecordBatch {
     {
         use ser::Error;
 
-        let records_size: usize = self.iter_recdata().map(|rec| rec.size()).sum();
+        let records_size: usize = self.iter().map(|rec| rec.size()).sum();
         let mut s = Serializer {
             buf: Vec::with_capacity(records_size),
         };
@@ -538,7 +546,7 @@ impl Serialize for RecordBatch {
             }
         }
 
-        let batch_length = RecordBatch::BASE_SIZE + records_bytes.len();
+        let batch_length = RecordBatch::INNER_SIZE + records_bytes.len();
         let mut s = Serializer {
             buf: Vec::with_capacity((64 + 32) / 8 + batch_length),
         };
