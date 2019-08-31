@@ -412,7 +412,7 @@ impl Serialize for Varint {
     where
         S: ser::Serializer,
     {
-        let mut buf = ArrayVec::<[u8; Varint::MAX_BYTES]>::new();
+        let mut buf = ArrayVec::<[u8; Varint::MAX_SIZE]>::new();
         zig_i32(self.0, &mut buf).map_err(ser::Error::custom)?;
         serializer.serialize_bytes(&buf)
     }
@@ -423,7 +423,7 @@ impl Serialize for Varlong {
     where
         S: ser::Serializer,
     {
-        let mut buf = ArrayVec::<[u8; Varlong::MAX_BYTES]>::new();
+        let mut buf = ArrayVec::<[u8; Varlong::MAX_SIZE]>::new();
         zig_i64(self.0, &mut buf).map_err(ser::Error::custom)?;
         serializer.serialize_bytes(&buf)
     }
@@ -548,7 +548,7 @@ impl Serialize for RecordBatch {
 
         let batch_length = RecordBatch::INNER_SIZE + records_bytes.len();
         let mut s = Serializer {
-            buf: Vec::with_capacity((64 + 32) / 8 + batch_length),
+            buf: Vec::with_capacity(RecordBatch::HEADING_SIZE + batch_length),
         };
 
         self.base_offset.serialize(&mut s).map_err(Error::custom)?;

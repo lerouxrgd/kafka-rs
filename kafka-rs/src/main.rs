@@ -118,13 +118,13 @@ fn wip_requests() -> std::io::Result<()> {
     use serde::Serialize;
 
     let mut serializer = Serializer::new();
-    let rec_batch = RecordBatch::builder()
-        .compression(Compression::Snappy)
-        .add_record(
-            Utc::now().timestamp(),
-            RecData::new(vec![99, 111, 117, 99, 111, 117]),
-        )
-        .build();
+    let mut rbb = RecordBatch::builder(5 * 1024 * 1024);
+    rbb.compression(Compression::Snappy);
+    rbb.add_record(
+        Utc::now().timestamp(),
+        RecData::new(vec![99, 111, 117, 99, 111, 117]),
+    );
+    let rec_batch = rbb.build();
     println!("+++++++> {:?}", rec_batch);
     rec_batch.serialize(&mut serializer).unwrap();
     let bytes = serializer.bytes();

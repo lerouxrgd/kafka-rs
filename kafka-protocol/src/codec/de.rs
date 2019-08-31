@@ -87,7 +87,8 @@ impl<'b, 'de> Deserializer<'b, 'de> {
         bytes.copy_from_slice(&self.input.borrow()[crc_pos - 4..crc_pos]);
         let crc = u32::from_be_bytes(bytes);
 
-        let crc_check = crc32c(&self.input.borrow()[crc_pos..((64 + 32) / 8 + batch_length)]);
+        let crc_check =
+            crc32c(&self.input.borrow()[crc_pos..(RecordBatch::HEADING_SIZE + batch_length)]);
         if crc != crc_check {
             return Err(de::Error::custom("Invalid crc, record is corrupted"));
         }

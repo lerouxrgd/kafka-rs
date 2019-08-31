@@ -23,7 +23,7 @@ impl Deref for NullableString {
 pub struct Varint(pub i32);
 
 impl Varint {
-    pub const MAX_BYTES: usize = 5;
+    pub const MAX_SIZE: usize = 5;
 
     #[allow(overflowing_literals)]
     pub fn size_of(val: i32) -> usize {
@@ -58,7 +58,7 @@ impl DerefMut for Varint {
 pub struct Varlong(pub i64);
 
 impl Varlong {
-    pub const MAX_BYTES: usize = 10;
+    pub const MAX_SIZE: usize = 10;
 
     #[allow(overflowing_literals)]
     pub fn size_of(val: i64) -> usize {
@@ -210,11 +210,17 @@ pub struct RecordBatch {
 }
 
 impl RecordBatch {
+    /// Size of fields [base_offset, batch_length]
+    pub(crate) const HEADING_SIZE: usize = (64 + 32) / 8;
+
     /// Size of fields [partition_leader_epoch ..records_len]
     pub(crate) const INNER_SIZE: usize = (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
 
-    pub fn builder() -> RecordBatchBuilder {
-        RecordBatchBuilder::new()
+    /// Size of fields excluding records
+    pub(crate) const OVERHEAD_SIZE: usize = RecordBatch::HEADING_SIZE + RecordBatch::INNER_SIZE;
+
+    pub fn builder(size_limit: usize) -> RecordBatchBuilder {
+        RecordBatchBuilder::new(size_limit)
     }
 
     pub fn compression(&self) -> Compression {
@@ -240,11 +246,6 @@ impl RecordBatch {
             0 => false,
             _ => true,
         }
-    }
-
-    pub fn raw_size(&self) -> usize {
-        let records_size: usize = self.iter().map(|rec| rec.size()).sum();
-        (64 + 32) / 8 + RecordBatch::INNER_SIZE + records_size
     }
 
     pub fn len(&self) -> usize {
@@ -403,71 +404,6 @@ pub enum TimestampType {
     LogAppendTime,
 }
 
-pub struct RecordBatchBuilder {
-    rec_batch: RecordBatch,
-}
-
-impl RecordBatchBuilder {
-    pub fn new() -> Self {
-        let mut rec_batch = RecordBatch::default();
-
-        // Current RecordBatch format version
-        rec_batch.magic = 2;
-
-        // Values used by non-idempotent/non-transactional producers
-        rec_batch.producer_id = -1;
-        rec_batch.producer_epoch = -1;
-        rec_batch.base_sequence = -1;
-
-        RecordBatchBuilder { rec_batch }
-    }
-
-    #[allow(overflowing_literals)]
-    pub fn compression(mut self, compression: Compression) -> Self {
-        let attr = &mut self.rec_batch.attributes;
-        match compression {
-            Compression::None => *attr &= 0xfff8,
-            Compression::Gzip => *attr = (*attr | 0x0001) & 0xfff9,
-            Compression::Snappy => *attr = (*attr | 0x0002) & 0xfffa,
-            Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
-            Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
-            _ => (),
-        }
-        self
-    }
-
-    pub fn add_record(mut self, ts: i64, mut rec: RecData) -> Self {
-        if self.rec_batch.first_timestamp == 0 {
-            self.rec_batch.first_timestamp = ts;
-        }
-
-        if ts > self.rec_batch.max_timestamp {
-            self.rec_batch.max_timestamp = ts;
-        }
-
-        let ts_delta = Varlong((ts - self.rec_batch.first_timestamp) as i64);
-        rec.timestamp_delta = ts_delta;
-
-        rec.offset_delta = Varint(self.rec_batch.records.len() as i32);
-        self.rec_batch.records.deref_mut().push(Record::Data(rec));
-
-        self
-    }
-
-    pub fn raw_size(&self) -> usize {
-        self.rec_batch.raw_size()
-    }
-
-    pub fn build(self) -> RecordBatch {
-        let mut rec_batch = self.rec_batch;
-        if rec_batch.records.len() > 0 {
-            rec_batch.last_offset_delta = (rec_batch.records.len() - 1) as i32;
-            rec_batch.records_len = rec_batch.records.len() as i32;
-        }
-        rec_batch
-    }
-}
-
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -509,5 +445,96 @@ pub mod message_set {
             pub key: crate::types::NullableBytes,
             pub value: crate::types::NullableBytes,
         }
+    }
+}
+
+pub struct RecordBatchBuilder {
+    size_limit: usize,
+    cr_estimate: f64,
+    rec_batch: RecordBatch,
+}
+
+impl RecordBatchBuilder {
+    pub fn new(size_limit: usize) -> Self {
+        let mut rec_batch = RecordBatch::default();
+
+        // Current RecordBatch format version
+        rec_batch.magic = 2;
+
+        // Values used by non-idempotent/non-transactional producers
+        rec_batch.producer_id = -1;
+        rec_batch.producer_epoch = -1;
+        rec_batch.base_sequence = -1;
+
+        RecordBatchBuilder {
+            size_limit,
+            cr_estimate: 1.0,
+            rec_batch,
+        }
+    }
+
+    #[allow(overflowing_literals)]
+    pub fn compression(&mut self, compression: Compression) {
+        let attr = &mut self.rec_batch.attributes;
+        match compression {
+            Compression::None => *attr &= 0xfff8,
+            Compression::Gzip => *attr = (*attr | 0x0001) & 0xfff9,
+            Compression::Snappy => *attr = (*attr | 0x0002) & 0xfffa,
+            Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
+            Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
+            _ => (),
+        }
+    }
+
+    pub fn add_record(&mut self, ts: i64, mut rec: RecData) {
+        if self.rec_batch.first_timestamp == 0 {
+            self.rec_batch.first_timestamp = ts;
+        }
+
+        if ts > self.rec_batch.max_timestamp {
+            self.rec_batch.max_timestamp = ts;
+        }
+
+        let ts_delta = Varlong((ts - self.rec_batch.first_timestamp) as i64);
+        rec.timestamp_delta = ts_delta;
+
+        rec.offset_delta = Varint(self.rec_batch.records.len() as i32);
+        self.rec_batch.records.deref_mut().push(Record::Data(rec));
+    }
+
+    pub fn has_room_for(&self, rec: RecData) -> bool {
+        let estimate = self.estime_size();
+
+        if estimate >= self.size_limit {
+            false
+        } else {
+            (estimate + rec.size() + Varlong::MAX_SIZE) <= self.size_limit
+        }
+    }
+
+    fn estime_size(&self) -> usize {
+        static CR_ESTIMATION_FACTOR: f64 = 1.05;
+
+        let records_size: usize = self.rec_batch.iter().map(|rec| rec.size()).sum();
+        match self.rec_batch.compression() {
+            Compression::None => RecordBatch::OVERHEAD_SIZE + records_size,
+            _ => {
+                RecordBatch::OVERHEAD_SIZE
+                    + records_size * (self.cr_estimate * CR_ESTIMATION_FACTOR) as usize
+            }
+        }
+    }
+
+    pub fn set_cr_estimate(&mut self, cr_estimate: f64) {
+        self.cr_estimate = cr_estimate;
+    }
+
+    pub fn build(self) -> RecordBatch {
+        let mut rec_batch = self.rec_batch;
+        if rec_batch.records.len() > 0 {
+            rec_batch.last_offset_delta = (rec_batch.records.len() - 1) as i32;
+            rec_batch.records_len = rec_batch.records.len() as i32;
+        }
+        rec_batch
     }
 }
