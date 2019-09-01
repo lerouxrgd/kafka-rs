@@ -1,10 +1,12 @@
 [package]
 name = "kafka-rs"
 version = "0.1.0"
-authors = ["Leroux Romain <leroux.rgd@gmail.com>"]
+authors = ["Romain Leroux <romain@leroux.dev>"]
 edition = "2018"
 license = "MIT"
 readme = "README.md"
 
 [dependencies]
+chrono = "0.4"
 kafka-protocol = { path = "../kafka-protocol" }
+serde = "1.0"

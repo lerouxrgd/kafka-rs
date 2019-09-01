@@ -1,6 +1,9 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use crate::codec::ser::{ser_option_bytes, ser_raw_string};
+use crate::codec::Compression;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableString(pub Option<String>);
 
 impl NullableString {
@@ -16,8 +19,27 @@ impl Deref for NullableString {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varint(pub i32);
+
+impl Varint {
+    pub const MAX_SIZE: usize = 5;
+
+    #[allow(overflowing_literals)]
+    pub fn size_of(val: i32) -> usize {
+        let mut v: i32 = (val << 1) ^ (val >> 31);
+        let mut bytes: i32 = 1;
+        while (v & 0xffffff80) != 0 {
+            bytes += 1;
+            v >>= 7;
+        }
+        return bytes as usize;
+    }
+
+    pub fn size(&self) -> usize {
+        Varint::size_of(self.0)
+    }
+}
 
 impl Deref for Varint {
     type Target = i32;
@@ -26,8 +48,33 @@ impl Deref for Varint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+impl DerefMut for Varint {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Varlong(pub i64);
+
+impl Varlong {
+    pub const MAX_SIZE: usize = 10;
+
+    #[allow(overflowing_literals)]
+    pub fn size_of(val: i64) -> usize {
+        let mut v: i64 = (val << 1) ^ (val >> 63);
+        let mut bytes: i64 = 1;
+        while (v & 0xffffffffffffff80) != 0 {
+            bytes += 1;
+            v >>= 7;
+        }
+        return bytes as usize;
+    }
+
+    pub fn size(&self) -> usize {
+        Varlong::size_of(self.0)
+    }
+}
 
 impl Deref for Varlong {
     type Target = i64;
@@ -36,7 +83,13 @@ impl Deref for Varlong {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+impl DerefMut for Varlong {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Bytes(pub Vec<u8>);
 
 impl Deref for Bytes {
@@ -46,7 +99,7 @@ impl Deref for Bytes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct NullableBytes(pub Option<Vec<u8>>);
 
 impl NullableBytes {
@@ -62,49 +115,116 @@ impl Deref for NullableBytes {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Deserialize)]
 pub struct RecordBatch {
+    /// Denotes the first offset in the RecordBatch. The `offset_delta`
+    /// of each Record in the batch would be be computed relative to
+    /// this base_offset. In particular, the offset of each Record in
+    /// the batch is its `offset_delta` + `base_offset`.
     pub base_offset: i64,
-    pub batch_length: i32,
+
+    /// The size in bytes of the batch, starting from the next field
+    /// (that is from `partition_leader_epoch`, included) to end of
+    /// the last Record in the batch (also included).
+    pub(crate) batch_length: i32,
+
+    /// Introduced with KIP-101, this is set by the broker upon
+    /// receipt of a produce request and is used to ensure no loss of
+    /// data when there are leader changes with log truncation. Client
+    /// developers do not need to worry about setting this value.
     pub partition_leader_epoch: i32,
-    pub magic: i8,
-    pub crc: i32,
-    pub attributes: u16,
+
+    /// This is a version id used to allow backwards compatible
+    /// evolution of the message binary format. The current magic
+    /// value is 2.
+    pub(crate) magic: i8,
+
+    /// The CRC is the CRC32 of the remainder of the message
+    /// bytes. This is used to check the integrity of the message on
+    /// the broker and consumer.
+    pub(crate) crc: u32,
+
+    /// This byte holds metadata attributes about the message.
+    ///
+    /// The lowest 3 bits contain the compression codec used for the
+    /// message.
+    ///
+    /// The fourth lowest bit represents the timestamp type. 0 stands
+    /// for CreateTime and 1 stands for LogAppendTime. The producer
+    /// should always set this bit to 0. (since 0.10.0)
+    ///
+    /// The fifth lowest bit indicates whether the RecordBatch is part
+    /// of a transaction or not. 0 indicates that the RecordBatch is
+    /// not transactional, while 1 indicates that it is. (since
+    /// 0.11.0.0).
+    ///
+    /// The sixth lowest bit indicates whether the RecordBatch
+    /// includes a control message. 1 indicates that the RecordBatch
+    /// is contains a control message, 0 indicates that it
+    /// doesn`t. Control messages are used to enable transactions in
+    /// Kafka and are generated by the broker. Clients should not
+    /// return control batches (ie. those with this bit set) to
+    /// applications. (since 0.11.0.0)
+    pub attributes: i16,
+
+    /// The offset of the last message in the RecordBatch. This is
+    /// used by the broker to ensure correct behavior even when
+    /// Records within a batch are compacted out.
     pub last_offset_delta: i32,
+
+    /// The timestamp of the first Record in the batch. The timestamp
+    /// of each Record in the RecordBatch is its `timestamp_delta` +
+    /// `first_timestamp`.
     pub first_timestamp: i64,
+
+    /// The timestamp of the last Record in the batch. This is used by
+    /// the broker to ensure the correct behavior even when Records
+    /// within the batch are compacted out.
     pub max_timestamp: i64,
+
+    /// Introduced in 0.11.0.0 for KIP-98, this is the broker assigned
+    /// producerId received by the `init_producer_id` request. Clients
+    /// which want to support idempotent message delivery and
+    /// transactions must set this field.
     pub producer_id: i64,
+
+    /// Introduced in 0.11.0.0 for KIP-98, this is the broker assigned
+    /// producerEpoch received by the `init_producer_id`
+    /// request. Clients which want to support idempotent message
+    /// delivery and transactions must set this field.
     pub producer_epoch: i16,
+
+    /// Introduced in 0.11.0.0 for KIP-98, this is the producer
+    /// assigned sequence number which is used by the broker to
+    /// deduplicate messages. Clients which want to support idempotent
+    /// message delivery and transactions must set this field. The
+    /// sequence number for each Record in the RecordBatch is its
+    /// `offset_delta` + `first_sequence`.
     pub base_sequence: i32,
-    pub records: Records,
-}
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub enum Compression {
-    NoCompression,
-    Gzip,
-    Snappy,
-    Lz4,
-    Zstd,
-    Unknown,
-}
+    /// The number of records in the batch.
+    pub(crate) records_len: i32,
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub enum TimestampType {
-    CreateTime,
-    LogAppendTime,
+    /// The actual records of the batch.
+    pub(crate) records: Records,
 }
 
 impl RecordBatch {
+    /// Size of fields [base_offset, batch_length]
+    pub(crate) const HEADING_SIZE: usize = (64 + 32) / 8;
+
+    /// Size of fields [partition_leader_epoch ..records_len]
+    pub(crate) const INNER_SIZE: usize = (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
+
+    /// Size of fields excluding records
+    pub const OVERHEAD_SIZE: usize = RecordBatch::HEADING_SIZE + RecordBatch::INNER_SIZE;
+
+    pub fn builder() -> RecordBatchBuilder {
+        RecordBatchBuilder::new()
+    }
+
     pub fn compression(&self) -> Compression {
-        match self.attributes & 7 {
-            0 => Compression::NoCompression,
-            1 => Compression::Gzip,
-            2 => Compression::Snappy,
-            3 => Compression::Lz4,
-            4 => Compression::Zstd,
-            _ => Compression::Unknown,
-        }
+        Compression::from_attr(self.attributes)
     }
 
     pub fn timestamp_type(&self) -> TimestampType {
@@ -121,43 +241,271 @@ impl RecordBatch {
         }
     }
 
-    pub fn is_control_batch(&self) -> bool {
+    pub fn is_control(&self) -> bool {
         match (self.attributes >> 5) & 1 {
             0 => false,
             _ => true,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.records_len as usize
+    }
+
+    pub fn into_iter(self) -> impl IntoIterator<Item = RecData> {
+        self.records.0.into_iter().filter_map(|rec| {
+            if let Record::Data(rec) = rec {
+                Some(rec)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RecData> {
+        self.records.0.iter().filter_map(|rec| {
+            if let Record::Data(ref rec) = rec {
+                Some(rec)
+            } else {
+                None
+            }
+        })
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub enum Records {
-    Control(Vec<ControlRecord>),
-    Batch(Vec<Record>),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Records(pub Vec<Record>);
+
+impl Deref for Records {
+    type Target = Vec<Record>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub struct ControlRecord {
+impl DerefMut for Records {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+pub enum Record {
+    Data(RecData),
+    Control(RecControl),
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
+pub struct RecControl {
     pub version: i16,
     pub r#type: i16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-pub struct Record {
-    pub length: Varint,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct RecData {
+    pub(crate) length: Varint,
     pub attributes: i8,
-    pub timestamp_delta: Varint,
-    pub offset_delta: Varint,
-    pub key_length: Varint,
-    pub key: Vec<u8>,
-    pub value_len: Varint,
+    pub(crate) timestamp_delta: Varlong,
+    pub(crate) offset_delta: Varint,
+    pub(crate) key_length: Varint,
+    pub key: Option<Vec<u8>>,
+    pub(crate) value_len: Varint,
     pub value: Vec<u8>,
+    pub(crate) header_len: Varint,
     pub headers: Vec<HeaderRecord>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
+impl RecData {
+    pub fn new(value: Vec<u8>) -> Self {
+        let mut rec_data = RecData::default();
+        rec_data.value_len = Varint(value.len() as i32);
+        rec_data.value = value;
+        rec_data.key_length = Varint(-1);
+        rec_data
+    }
+
+    pub fn set_key(mut self, key: Vec<u8>) -> Self {
+        self.key_length = Varint(key.len() as i32);
+        self.key = Some(key);
+        self
+    }
+
+    pub fn add_header(mut self, key: String, value: Option<Vec<u8>>) -> Self {
+        let key_length = Varint(key.len() as i32);
+        let value_length = if let Some(ref value) = value {
+            Varint(value.len() as i32)
+        } else {
+            Varint(-1)
+        };
+
+        self.headers.push(HeaderRecord {
+            key_length,
+            key,
+            value_length,
+            value,
+        });
+        *self.header_len += 1;
+
+        self
+    }
+
+    pub fn offset_delta(&self) -> i32 {
+        *self.offset_delta
+    }
+
+    pub fn timestamp_delta(&self) -> i64 {
+        *self.timestamp_delta
+    }
+
+    pub fn size(&self) -> usize {
+        let mut size = 1 + self.timestamp_delta.size() + self.offset_delta.size();
+
+        size += self.key_length.size();
+        if let Some(ref key) = self.key {
+            size += key.len();
+        }
+
+        size += self.value_len.size() + self.value.len();
+
+        size += self.header_len.size();
+        for header in self.headers.iter() {
+            size += header.size();
+        }
+
+        size
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct HeaderRecord {
-    pub key_length: Varint,
+    pub(crate) key_length: Varint,
+    #[serde(serialize_with = "ser_raw_string")]
     pub key: String,
-    pub value_length: Varint,
-    pub value: Vec<u8>,
+    pub(crate) value_length: Varint,
+    #[serde(serialize_with = "ser_option_bytes")]
+    pub value: Option<Vec<u8>>,
+}
+
+impl HeaderRecord {
+    pub fn size(&self) -> usize {
+        let mut size = self.key_length.size() + self.key.len() + self.value_length.size();
+        if let Some(ref value) = self.value {
+            size += value.len();
+        }
+        size
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TimestampType {
+    CreateTime,
+    LogAppendTime,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum MessageSet {
+    V0 {
+        offset: i64,
+        message_size: i32,
+        message: message_set::v0::Message,
+    },
+    V1 {
+        offset: i64,
+        message_size: i32,
+        message: message_set::v1::Message,
+    },
+}
+
+pub mod message_set {
+    pub mod v0 {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        pub struct Message {
+            pub crc: u32,
+            pub magic_byte: i8,
+            pub attributes: i8,
+            pub key: crate::types::NullableBytes,
+            pub value: crate::types::NullableBytes,
+        }
+    }
+    pub mod v1 {
+        #[derive(
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+        )]
+        pub struct Message {
+            pub crc: u32,
+            pub magic_byte: i8,
+            pub attributes: i8,
+            pub timestamp: i64,
+            pub key: crate::types::NullableBytes,
+            pub value: crate::types::NullableBytes,
+        }
+    }
+}
+
+pub struct RecordBatchBuilder {
+    rec_batch: RecordBatch,
+}
+
+impl RecordBatchBuilder {
+    pub fn new() -> Self {
+        let mut rec_batch = RecordBatch::default();
+
+        // Current RecordBatch format version
+        rec_batch.magic = 2;
+
+        // Values used by non-idempotent/non-transactional producers
+        rec_batch.producer_id = -1;
+        rec_batch.producer_epoch = -1;
+        rec_batch.base_sequence = -1;
+
+        RecordBatchBuilder { rec_batch }
+    }
+
+    #[allow(overflowing_literals)]
+    pub fn set_compression(&mut self, compression: Compression) {
+        let attr = &mut self.rec_batch.attributes;
+        match compression {
+            Compression::None => *attr &= 0xfff8,
+            Compression::Gzip => *attr = (*attr | 0x0001) & 0xfff9,
+            Compression::Snappy => *attr = (*attr | 0x0002) & 0xfffa,
+            Compression::Lz4 => *attr = (*attr | 0x0003) & 0xfffb,
+            Compression::Zstd => *attr = (*attr | 0x0004) & 0xfffc,
+            _ => (),
+        }
+    }
+
+    pub fn add_record(&mut self, ts: i64, mut rec: RecData) {
+        if self.rec_batch.first_timestamp == 0 {
+            self.rec_batch.first_timestamp = ts;
+        }
+
+        if ts > self.rec_batch.max_timestamp {
+            self.rec_batch.max_timestamp = ts;
+        }
+
+        let ts_delta = Varlong((ts - self.rec_batch.first_timestamp) as i64);
+        rec.timestamp_delta = ts_delta;
+
+        rec.offset_delta = Varint(self.rec_batch.records.len() as i32);
+        self.rec_batch.records.deref_mut().push(Record::Data(rec));
+    }
+
+    pub fn records_size(&self) -> usize {
+        self.rec_batch.iter().map(|rec| rec.size()).sum()
+    }
+
+    pub fn build(self) -> RecordBatch {
+        let mut rec_batch = self.rec_batch;
+        if rec_batch.records.len() > 0 {
+            rec_batch.last_offset_delta = (rec_batch.records.len() - 1) as i32;
+            rec_batch.records_len = rec_batch.records.len() as i32;
+        }
+        rec_batch
+    }
 }
