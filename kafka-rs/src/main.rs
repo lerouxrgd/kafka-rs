@@ -5,6 +5,51 @@ use kafka_protocol::codec::{self, decode_resp, encode_req, Compression, Deserial
 use kafka_protocol::model::*;
 use kafka_protocol::types::*;
 
+pub struct RecAcc {
+    size_limit: usize,
+    compression: Compression,
+    cr_estimate: f64,
+    rbb: RecordBatchBuilder,
+}
+
+impl RecAcc {
+    pub fn new(size_limit: usize) -> Self {
+        RecAcc {
+            size_limit,
+            compression: Compression::None,
+            cr_estimate: 1.0,
+            rbb: RecordBatchBuilder::new(),
+        }
+    }
+
+    pub fn set_cr_estimate(&mut self, cr_estimate: f64) {
+        self.cr_estimate = cr_estimate;
+    }
+
+    pub fn has_room_for(&self, rec: RecData) -> bool {
+        let estimate = self.estime_size();
+
+        if estimate >= self.size_limit {
+            false
+        } else {
+            (estimate + rec.size() + Varlong::MAX_SIZE) <= self.size_limit
+        }
+    }
+
+    fn estime_size(&self) -> usize {
+        static CR_ESTIMATION_FACTOR: f64 = 1.05;
+
+        let records_size: usize = self.rbb.records_size();
+        match self.compression {
+            Compression::None => RecordBatch::OVERHEAD_SIZE + records_size,
+            _ => {
+                RecordBatch::OVERHEAD_SIZE
+                    + records_size * (self.cr_estimate * CR_ESTIMATION_FACTOR) as usize
+            }
+        }
+    }
+}
+
 pub fn read_resp<R, T>(rdr: &mut R, version: usize) -> codec::Result<(HeaderResponse, T)>
 where
     R: Read,
@@ -118,8 +163,8 @@ fn wip_requests() -> std::io::Result<()> {
     use serde::Serialize;
 
     let mut serializer = Serializer::new();
-    let mut rbb = RecordBatch::builder(5 * 1024 * 1024);
-    rbb.compression(Compression::Snappy);
+    let mut rbb = RecordBatch::builder();
+    rbb.set_compression(Compression::Snappy);
     rbb.add_record(
         Utc::now().timestamp(),
         RecData::new(vec![99, 111, 117, 99, 111, 117]),

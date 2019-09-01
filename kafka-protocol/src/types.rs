@@ -217,10 +217,10 @@ impl RecordBatch {
     pub(crate) const INNER_SIZE: usize = (32 + 8 + 32 + 16 + 32 + 64 + 64 + 64 + 16 + 32 + 32) / 8;
 
     /// Size of fields excluding records
-    pub(crate) const OVERHEAD_SIZE: usize = RecordBatch::HEADING_SIZE + RecordBatch::INNER_SIZE;
+    pub const OVERHEAD_SIZE: usize = RecordBatch::HEADING_SIZE + RecordBatch::INNER_SIZE;
 
-    pub fn builder(size_limit: usize) -> RecordBatchBuilder {
-        RecordBatchBuilder::new(size_limit)
+    pub fn builder() -> RecordBatchBuilder {
+        RecordBatchBuilder::new()
     }
 
     pub fn compression(&self) -> Compression {
@@ -449,13 +449,11 @@ pub mod message_set {
 }
 
 pub struct RecordBatchBuilder {
-    size_limit: usize,
-    cr_estimate: f64,
     rec_batch: RecordBatch,
 }
 
 impl RecordBatchBuilder {
-    pub fn new(size_limit: usize) -> Self {
+    pub fn new() -> Self {
         let mut rec_batch = RecordBatch::default();
 
         // Current RecordBatch format version
@@ -466,15 +464,11 @@ impl RecordBatchBuilder {
         rec_batch.producer_epoch = -1;
         rec_batch.base_sequence = -1;
 
-        RecordBatchBuilder {
-            size_limit,
-            cr_estimate: 1.0,
-            rec_batch,
-        }
+        RecordBatchBuilder { rec_batch }
     }
 
     #[allow(overflowing_literals)]
-    pub fn compression(&mut self, compression: Compression) {
+    pub fn set_compression(&mut self, compression: Compression) {
         let attr = &mut self.rec_batch.attributes;
         match compression {
             Compression::None => *attr &= 0xfff8,
@@ -502,31 +496,8 @@ impl RecordBatchBuilder {
         self.rec_batch.records.deref_mut().push(Record::Data(rec));
     }
 
-    pub fn has_room_for(&self, rec: RecData) -> bool {
-        let estimate = self.estime_size();
-
-        if estimate >= self.size_limit {
-            false
-        } else {
-            (estimate + rec.size() + Varlong::MAX_SIZE) <= self.size_limit
-        }
-    }
-
-    fn estime_size(&self) -> usize {
-        static CR_ESTIMATION_FACTOR: f64 = 1.05;
-
-        let records_size: usize = self.rec_batch.iter().map(|rec| rec.size()).sum();
-        match self.rec_batch.compression() {
-            Compression::None => RecordBatch::OVERHEAD_SIZE + records_size,
-            _ => {
-                RecordBatch::OVERHEAD_SIZE
-                    + records_size * (self.cr_estimate * CR_ESTIMATION_FACTOR) as usize
-            }
-        }
-    }
-
-    pub fn set_cr_estimate(&mut self, cr_estimate: f64) {
-        self.cr_estimate = cr_estimate;
+    pub fn records_size(&self) -> usize {
+        self.rec_batch.iter().map(|rec| rec.size()).sum()
     }
 
     pub fn build(self) -> RecordBatch {
