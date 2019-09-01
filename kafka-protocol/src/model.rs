@@ -403,7 +403,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v1 {
@@ -419,7 +419,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v2 {
@@ -435,7 +435,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v3 {
@@ -451,7 +451,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v4 {
@@ -467,7 +467,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v5 {
@@ -483,7 +483,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v6 {
@@ -499,7 +499,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
     pub mod v7 {
@@ -515,7 +515,7 @@ pub mod produce_request {
             /// Topic partition id
             pub partition: i32,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
     }
 }
@@ -1451,7 +1451,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1476,7 +1476,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1501,7 +1501,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1526,7 +1526,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1551,7 +1551,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1589,7 +1589,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1629,7 +1629,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1669,7 +1669,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1709,7 +1709,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1749,7 +1749,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1789,7 +1789,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {
@@ -1829,7 +1829,7 @@ pub mod fetch_response {
             /// null
             pub partition_header: PartitionHeader,
             /// null
-            pub record_set: crate::types::Records,
+            pub record_set: crate::types::NullableBytes,
         }
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct PartitionHeader {

@@ -677,7 +677,7 @@ impl Primitive {
             Primitive::NullableString => "crate::types::NullableString".to_string(),
             Primitive::Bytes => "crate::types::Bytes".to_string(),
             Primitive::NullableBytes => "crate::types::NullableBytes".to_string(),
-            Primitive::Records => "crate::types::Records".to_string(),
+            Primitive::Records => "crate::types::NullableBytes".to_string(),
         }
     }
 }
@@ -750,15 +750,15 @@ mod tests {
     fn parse_spec() {
         use super::Spec::*;
 
-        let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout 
-  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries] 
+        let raw = "CreateTopics Request (Version: 0) => [create_topic_requests] timeout
+  create_topic_requests => topic num_partitions replication_factor [replica_assignment] [config_entries]
     topic => STRING
     num_partitions => INT32
     replication_factor => INT16
-    replica_assignment => partition [replicas] 
+    replica_assignment => partition [replicas]
       partition => INT32
       replicas => INT32
-    config_entries => config_name config_value 
+    config_entries => config_name config_value
       config_name => STRING
       config_value => NULLABLE_STRING
   timeout => INT32";
@@ -796,5 +796,4 @@ mod tests {
             spec
         );
     }
-
 }
