@@ -128,16 +128,23 @@ struct Attributes {
 }
 
 trait DeserializerExt<'b> {
-    fn record_attributes(&self) -> &Attributes {
+    fn record_attributes(&self) -> &Attributes;
+
+    fn input(&self) -> Rc<RefCell<&'b [u8]>>;
+}
+
+impl<'b, 'de, D> DeserializerExt<'b> for D
+where
+    D: de::Deserializer<'de>,
+{
+    default fn record_attributes(&self) -> &Attributes {
         unimplemented!()
     }
 
-    fn input(&self) -> Rc<RefCell<&'b [u8]>> {
+    default fn input(&self) -> Rc<RefCell<&'b [u8]>> {
         unimplemented!()
     }
 }
-
-impl<'b, 'de, D> DeserializerExt<'b> for D where D: de::Deserializer<'de> {}
 
 impl<'b, 'de> DeserializerExt<'b> for &mut Deserializer<'b, 'de> {
     fn record_attributes(&self) -> &Attributes {
@@ -578,12 +585,14 @@ impl<'a, 'b, 'de> VariantAccess<'de> for Enum<'a, 'b, 'de> {
 }
 
 trait VisitorExt {
-    fn consumed(&self) -> Rc<RefCell<usize>> {
+    fn consumed(&self) -> Rc<RefCell<usize>>;
+}
+
+impl<'de, V: Visitor<'de>> VisitorExt for V {
+    default fn consumed(&self) -> Rc<RefCell<usize>> {
         unimplemented!()
     }
 }
-
-impl<'de, V: Visitor<'de>> VisitorExt for V {}
 
 impl<'de> Deserialize<'de> for Bytes {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Bytes, D::Error>

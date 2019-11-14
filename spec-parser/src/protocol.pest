@@ -3,7 +3,7 @@ COMMENT = _{ "<!--" ~ (!"-->" ~ ANY)* ~ "-->" }
 
 file = { SOI ~ doctype ~ html ~ EOI }
     doctype = _{ "<!DOCTYPE" ~ (!">" ~ ANY)* ~ ">" }
-    html    = _{ h_start ~ head ~ body ~ script* ~ h_end } 
+    html    = _{ h_start ~ head ~ body ~ script* ~ h_end }
         h_start = _{ "<html" ~ (!">" ~ ANY)* ~ ">" }
         head    = _{ "<head>" ~ (!"</head>" ~ ANY)* ~ "</head>" }
         body    = _{ "<body>" ~
