@@ -10,32 +10,28 @@ use crate::model::HeaderRequest;
 use crate::types::*;
 
 pub fn encode_req<T: Serialize>(header: &HeaderRequest, val: &T) -> Result<Vec<u8>> {
-    let mut serializer = Serializer::new_sized();
+    let mut serializer = Serializer::padded();
     header.serialize(&mut serializer)?;
     val.serialize(&mut serializer)?;
-    Ok(serializer.bytes_sized())
+    Ok(serializer.padded_bytes())
 }
 
+#[derive(Default)]
 pub struct Serializer {
     pub(crate) buf: Vec<u8>,
 }
 
 impl Serializer {
-    pub fn new() -> Self {
-        Serializer { buf: vec![] }
-    }
-
     pub fn bytes(self) -> Vec<u8> {
         self.buf
     }
-
-    fn new_sized() -> Self {
+    fn padded() -> Self {
         Serializer { buf: vec![0; 4] }
     }
 
-    fn bytes_sized(mut self) -> Vec<u8> {
+    fn padded_bytes(mut self) -> Vec<u8> {
         let size = self.buf.len() as i32 - 4;
-        self.buf.splice(..4, (&size.to_be_bytes()).iter().cloned());
+        self.buf.splice(..4, size.to_be_bytes().iter().cloned());
         self.buf
     }
 }

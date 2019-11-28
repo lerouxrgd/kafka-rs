@@ -23,7 +23,7 @@ mod tests {
     use crate::types::*;
 
     fn encode_single<T: Serialize>(val: &T) -> Result<Vec<u8>> {
-        let mut serializer = Serializer::new();
+        let mut serializer = Serializer::default();
         val.serialize(&mut serializer)?;
         Ok(serializer.buf)
     }

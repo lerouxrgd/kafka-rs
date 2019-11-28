@@ -13,6 +13,8 @@ use crate::codec::error::{Error, Result};
 use crate::model::HeaderResponse;
 use crate::types::*;
 
+// TODO: consider `try_from` instead of `as` when deserializing etc
+
 pub fn decode_resp<'a, T>(input: &'a [u8], version: usize) -> Result<(HeaderResponse, T)>
 where
     T: Deserialize<'a>,
@@ -417,7 +419,7 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
 
     fn deserialize_enum<V>(
         self,
-        _name: &'static str,
+        name: &'static str,
         variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
@@ -428,8 +430,8 @@ impl<'a, 'b, 'de> de::Deserializer<'de> for &'a mut Deserializer<'b, 'de> {
             .get(self.struct_variant)
             .ok_or_else::<Error, _>(|| {
                 de::Error::custom(format!(
-                    "no variant {} within {:?}",
-                    self.struct_variant, variants
+                    "no variant {} within {:?} for enum {}",
+                    self.struct_variant, variants, name
                 ))
             })?;
 

@@ -117,7 +117,7 @@ fn wip_requests() -> std::io::Result<()> {
     use chrono::Utc;
     use serde::Serialize;
 
-    let mut serializer = Serializer::new();
+    let mut serializer = Serializer::default();
     let mut rbb = RecordBatch::builder();
     rbb.set_compression(Compression::Snappy);
     rbb.add_record(
