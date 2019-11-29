@@ -2,7 +2,7 @@
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct HeaderRequest {
-    pub api_key: ApiKey,
+    pub api_key: crate::model::ApiKey,
     pub api_version: i16,
     pub correlation_id: i32,
     pub client_id: crate::types::NullableString,
@@ -15,7 +15,16 @@ pub struct HeaderResponse {
 
 ///  Numeric codes to indicate what problem occurred on the Kafka server.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    num_enum::IntoPrimitive,
+    num_enum::TryFromPrimitive,
 )]
 #[repr(i16)]
 pub enum ErrorCode {
@@ -244,7 +253,17 @@ pub enum ErrorCode {
 
 ///  Numeric codes used to specify request types.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    num_enum::IntoPrimitive,
+    num_enum::TryFromPrimitive,
+    strum_macros::EnumIter,
 )]
 #[repr(i16)]
 pub enum ApiKey {
@@ -295,7 +314,7 @@ pub enum ApiKey {
     IncrementalAlterConfigs = 44,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ProduceRequest {
     V0 {
         /// The number of acknowledgments the producer requires the leader to have
@@ -520,7 +539,7 @@ pub mod produce_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ProduceResponse {
     V0 {
         /// null
@@ -763,7 +782,7 @@ pub mod produce_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum FetchRequest {
     V0 {
         /// Broker id of the follower. For normal consumers, use -1.
@@ -1332,7 +1351,7 @@ pub mod fetch_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum FetchResponse {
     V0 {
         /// null
@@ -1860,7 +1879,7 @@ pub mod fetch_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ListOffsetsRequest {
     V0 {
         /// Broker id of the follower. For normal consumers, use -1.
@@ -2051,7 +2070,7 @@ pub mod list_offsets_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ListOffsetsResponse {
     V0 {
         /// The listed offsets by topic
@@ -2216,7 +2235,7 @@ pub mod list_offsets_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum MetadataRequest {
     V0 {
         /// The topics to fetch metadata for.
@@ -2341,7 +2360,7 @@ pub mod metadata_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum MetadataResponse {
     V0 {
         /// Each broker in the response.
@@ -2795,7 +2814,7 @@ pub mod metadata_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum LeaderAndIsrRequest {
     V0 {
         /// The controller id
@@ -2933,7 +2952,7 @@ pub mod leader_and_isr_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum LeaderAndIsrResponse {
     V0 {
         /// Response error code
@@ -2991,7 +3010,7 @@ pub mod leader_and_isr_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum StopReplicaRequest {
     V0 {
         /// The controller id
@@ -3038,7 +3057,7 @@ pub mod stop_replica_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum StopReplicaResponse {
     V0 {
         /// Response error code
@@ -3079,7 +3098,7 @@ pub mod stop_replica_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum UpdateMetadataRequest {
     V0 {
         /// The controller id
@@ -3386,7 +3405,7 @@ pub mod update_metadata_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum UpdateMetadataResponse {
     V0 {
         /// Response error code
@@ -3414,7 +3433,7 @@ pub enum UpdateMetadataResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ControlledShutdownRequest {
     V0 {
         /// The id of the broker for which controlled shutdown has been requested.
@@ -3432,7 +3451,7 @@ pub enum ControlledShutdownRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ControlledShutdownResponse {
     V0 {
         /// The top-level error code.
@@ -3484,7 +3503,7 @@ pub mod controlled_shutdown_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum OffsetCommitRequest {
     V0 {
         /// The unique group identifier.
@@ -3725,7 +3744,7 @@ pub mod offset_commit_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum OffsetCommitResponse {
     V0 {
         /// The responses for each topic.
@@ -3907,7 +3926,7 @@ pub mod offset_commit_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum OffsetFetchRequest {
     V0 {
         /// The unique group identifier
@@ -4038,7 +4057,7 @@ pub mod offset_fetch_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum OffsetFetchResponse {
     V0 {
         /// Responses by topic for fetched offsets
@@ -4210,7 +4229,7 @@ pub mod offset_fetch_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum FindCoordinatorRequest {
     V0 {
         /// The coordinator key.
@@ -4230,7 +4249,7 @@ pub enum FindCoordinatorRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum FindCoordinatorResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -4274,7 +4293,7 @@ pub enum FindCoordinatorResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum JoinGroupRequest {
     V0 {
         /// The group identifier.
@@ -4436,7 +4455,7 @@ pub mod join_group_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum JoinGroupResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -4595,7 +4614,7 @@ pub mod join_group_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum HeartbeatRequest {
     V0 {
         /// The group id.
@@ -4633,7 +4652,7 @@ pub enum HeartbeatRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum HeartbeatResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -4662,7 +4681,7 @@ pub enum HeartbeatResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum LeaveGroupRequest {
     V0 {
         /// The ID of the group to leave.
@@ -4684,7 +4703,7 @@ pub enum LeaveGroupRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum LeaveGroupResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -4706,7 +4725,7 @@ pub enum LeaveGroupResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum SyncGroupRequest {
     V0 {
         /// The unique group identifier.
@@ -4791,7 +4810,7 @@ pub mod sync_group_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum SyncGroupResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -4828,7 +4847,7 @@ pub enum SyncGroupResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeGroupsRequest {
     V0 {
         /// The names of the groups to describe
@@ -4850,7 +4869,7 @@ pub enum DescribeGroupsRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeGroupsResponse {
     V0 {
         /// Each described group.
@@ -5004,14 +5023,14 @@ pub mod describe_groups_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ListGroupsRequest {
     V0 {},
     V1 {},
     V2 {},
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ListGroupsResponse {
     V0 {
         /// Response error code
@@ -5069,7 +5088,7 @@ pub mod list_groups_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum SaslHandshakeRequest {
     V0 {
         /// The SASL mechanism chosen by the client.
@@ -5081,7 +5100,7 @@ pub enum SaslHandshakeRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum SaslHandshakeResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -5097,14 +5116,14 @@ pub enum SaslHandshakeResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ApiVersionsRequest {
     V0 {},
     V1 {},
     V2 {},
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ApiVersionsResponse {
     V0 {
         /// Response error code
@@ -5168,7 +5187,7 @@ pub mod api_versions_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateTopicsRequest {
     V0 {
         /// The topics to create.
@@ -5336,7 +5355,7 @@ pub mod create_topics_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateTopicsResponse {
     V0 {
         /// Results for each topic we tried to create.
@@ -5407,7 +5426,7 @@ pub mod create_topics_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteTopicsRequest {
     V0 {
         /// The names of the topics to delete
@@ -5439,7 +5458,7 @@ pub enum DeleteTopicsRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteTopicsResponse {
     V0 {
         /// The results for each topic we tried to delete.
@@ -5507,7 +5526,7 @@ pub mod delete_topics_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteRecordsRequest {
     V0 {
         /// null
@@ -5560,7 +5579,7 @@ pub mod delete_records_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteRecordsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -5617,7 +5636,7 @@ pub mod delete_records_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum InitProducerIdRequest {
     V0 {
         /// The transactional id, or null if the producer is not transactional.
@@ -5637,7 +5656,7 @@ pub enum InitProducerIdRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum InitProducerIdResponse {
     V0 {
         /// The duration in milliseconds for which the request was throttled due
@@ -5663,7 +5682,7 @@ pub enum InitProducerIdResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum OffsetForLeaderEpochRequest {
     V0 {
         /// An array of topics to get epochs for
@@ -5766,7 +5785,7 @@ pub mod offset_for_leader_epoch_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum OffsetForLeaderEpochResponse {
     V0 {
         /// An array of topics for which we have leader offsets for some requested
@@ -5877,7 +5896,7 @@ pub mod offset_for_leader_epoch_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AddPartitionsToTxnRequest {
     V0 {
         /// The transactional id corresponding to the transaction.
@@ -5922,7 +5941,7 @@ pub mod add_partitions_to_txn_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AddPartitionsToTxnResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -5975,7 +5994,7 @@ pub mod add_partitions_to_txn_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AddOffsetsToTxnRequest {
     V0 {
         /// The transactional id corresponding to the transaction.
@@ -5999,7 +6018,7 @@ pub enum AddOffsetsToTxnRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AddOffsetsToTxnResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6017,7 +6036,7 @@ pub enum AddOffsetsToTxnResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum EndTxnRequest {
     V0 {
         /// The transactional id corresponding to the transaction.
@@ -6041,7 +6060,7 @@ pub enum EndTxnRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum EndTxnResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6059,7 +6078,7 @@ pub enum EndTxnResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum WriteTxnMarkersRequest {
     V0 {
         /// The transaction markers to be written.
@@ -6094,7 +6113,7 @@ pub mod write_txn_markers_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum WriteTxnMarkersResponse {
     V0 {
         /// Errors per partition from writing markers.
@@ -6128,7 +6147,7 @@ pub mod write_txn_markers_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum TxnOffsetCommitRequest {
     V0 {
         /// The transactional id corresponding to the transaction.
@@ -6229,7 +6248,7 @@ pub mod txn_offset_commit_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum TxnOffsetCommitResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6305,7 +6324,7 @@ pub mod txn_offset_commit_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeAclsRequest {
     V0 {
         /// The resource type
@@ -6339,7 +6358,7 @@ pub enum DescribeAclsRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeAclsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6414,7 +6433,7 @@ pub mod describe_acls_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateAclsRequest {
     V0 {
         /// null
@@ -6465,7 +6484,7 @@ pub mod create_acls_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateAclsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6504,7 +6523,7 @@ pub mod create_acls_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteAclsRequest {
     V0 {
         /// null
@@ -6555,7 +6574,7 @@ pub mod delete_acls_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteAclsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6638,7 +6657,7 @@ pub mod delete_acls_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeConfigsRequest {
     V0 {
         /// An array of config resources to be returned.
@@ -6694,7 +6713,7 @@ pub mod describe_configs_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeConfigsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6828,7 +6847,7 @@ pub mod describe_configs_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AlterConfigsRequest {
     V0 {
         /// An array of resources to update with the provided configs.
@@ -6883,7 +6902,7 @@ pub mod alter_configs_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AlterConfigsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -6930,7 +6949,7 @@ pub mod alter_configs_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AlterReplicaLogDirsRequest {
     V0 {
         /// null
@@ -6977,7 +6996,7 @@ pub mod alter_replica_log_dirs_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum AlterReplicaLogDirsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -7030,7 +7049,7 @@ pub mod alter_replica_log_dirs_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeLogDirsRequest {
     V0 {
         /// null
@@ -7063,7 +7082,7 @@ pub mod describe_log_dirs_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeLogDirsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -7148,7 +7167,7 @@ pub mod describe_log_dirs_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum SaslAuthenticateRequest {
     V0 {
         /// The SASL authentication bytes from the client, as defined by the SASL
@@ -7162,7 +7181,7 @@ pub enum SaslAuthenticateRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum SaslAuthenticateResponse {
     V0 {
         /// The error code, or 0 if there was no error.
@@ -7187,7 +7206,7 @@ pub enum SaslAuthenticateResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreatePartitionsRequest {
     V0 {
         /// List of topic and the corresponding new partitions.
@@ -7244,7 +7263,7 @@ pub mod create_partitions_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreatePartitionsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -7287,7 +7306,7 @@ pub mod create_partitions_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateDelegationTokenRequest {
     V0 {
         /// An array of token renewers. Renewer is an Kafka PrincipalType and name
@@ -7330,7 +7349,7 @@ pub mod create_delegation_token_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateDelegationTokenResponse {
     V0 {
         /// Response error code
@@ -7393,7 +7412,7 @@ pub mod create_delegation_token_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum RenewDelegationTokenRequest {
     V0 {
         /// HMAC of the delegation token to be renewed.
@@ -7409,7 +7428,7 @@ pub enum RenewDelegationTokenRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum RenewDelegationTokenResponse {
     V0 {
         /// Response error code
@@ -7431,7 +7450,7 @@ pub enum RenewDelegationTokenResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ExpireDelegationTokenRequest {
     V0 {
         /// HMAC of the delegation token to be expired.
@@ -7447,7 +7466,7 @@ pub enum ExpireDelegationTokenRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ExpireDelegationTokenResponse {
     V0 {
         /// Response error code
@@ -7469,7 +7488,7 @@ pub enum ExpireDelegationTokenResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeDelegationTokenRequest {
     V0 {
         /// An array of token owners.
@@ -7502,7 +7521,7 @@ pub mod describe_delegation_token_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DescribeDelegationTokenResponse {
     V0 {
         /// Response error code
@@ -7597,7 +7616,7 @@ pub mod describe_delegation_token_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteGroupsRequest {
     V0 {
         /// An array of groups to be deleted.
@@ -7609,7 +7628,7 @@ pub enum DeleteGroupsRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum DeleteGroupsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to
@@ -7648,7 +7667,7 @@ pub mod delete_groups_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ElectPreferredLeadersRequest {
     V0 {
         /// The topic partitions to elect the preferred leader of.
@@ -7670,7 +7689,7 @@ pub mod elect_preferred_leaders_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ElectPreferredLeadersResponse {
     V0 {
         /// The duration in milliseconds for which the request was throttled due
@@ -7703,7 +7722,7 @@ pub mod elect_preferred_leaders_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum IncrementalAlterConfigsRequest {
     V0 {
         /// The incremental updates for each resource.
@@ -7737,7 +7756,7 @@ pub mod incremental_alter_configs_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum IncrementalAlterConfigsResponse {
     V0 {
         /// Duration in milliseconds for which the request was throttled due to a

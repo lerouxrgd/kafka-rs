@@ -23,7 +23,7 @@ pub mod motif {
 const HEADERS: &str = r#"
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct HeaderRequest {
-    pub api_key: ApiKey,
+    pub api_key: crate::model::ApiKey,
     pub api_version: i16,
     pub correlation_id: i32,
     pub client_id: crate::types::NullableString,
@@ -38,7 +38,18 @@ pub struct HeaderResponse {
 const ERROR_CODES_TERA: &str = "error_codes.tera";
 const ERROR_CODES_TEMPLATE: &str = r#"
 ///  Numeric codes to indicate what problem occurred on the Kafka server.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    num_enum::IntoPrimitive,
+    num_enum::TryFromPrimitive,
+)]
 #[repr(i16)]
 pub enum ErrorCode {
     {%- for e in err_codes %}
@@ -51,7 +62,19 @@ pub enum ErrorCode {
 const API_KEYS_TERA: &str = "api_keys.tera";
 const API_KEYS_TEMPLATE: &str = r#"
 ///  Numeric codes used to specify request types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    num_enum::IntoPrimitive,
+    num_enum::TryFromPrimitive,
+    strum_macros::EnumIter,
+)]
 #[repr(i16)]
 pub enum ApiKey {
     {%- for k in api_keys %}
@@ -62,7 +85,7 @@ pub enum ApiKey {
 
 const REQ_RESP_ENUM_TERA: &str = "req_resp_enum.tera";
 const REQ_RESP_ENUM_TEMPLATE: &str = r#"
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum {{ name }} {
     {%- for fields in versions %}
     V{{ loop.index0 }} {
