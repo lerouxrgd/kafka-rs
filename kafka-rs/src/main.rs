@@ -144,40 +144,34 @@ async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (
 
             ApiVersionsResponse::V0 { api_versions, .. } => Ok(api_versions
                 .iter()
-                .map(|v| {
-                    Ok((
-                        v.api_key,
-                        (
-                            usize::try_from(v.min_version)?,
-                            usize::try_from(v.max_version)?,
-                        ),
-                    ))
+                .filter_map(|v| match ApiKey::try_from(v.api_key) {
+                    Ok(api_key) => Some((api_key, (v.min_version, v.max_version))),
+                    _ => None,
+                })
+                .map(|(api_key, (min, max))| {
+                    Ok((api_key, (usize::try_from(min)?, usize::try_from(max)?)))
                 })
                 .collect::<Result<HashMap<_, _>>>()?),
 
             ApiVersionsResponse::V1 { api_versions, .. } => Ok(api_versions
                 .iter()
-                .map(|v| {
-                    Ok((
-                        v.api_key,
-                        (
-                            usize::try_from(v.min_version)?,
-                            usize::try_from(v.max_version)?,
-                        ),
-                    ))
+                .filter_map(|v| match ApiKey::try_from(v.api_key) {
+                    Ok(api_key) => Some((api_key, (v.min_version, v.max_version))),
+                    _ => None,
+                })
+                .map(|(api_key, (min, max))| {
+                    Ok((api_key, (usize::try_from(min)?, usize::try_from(max)?)))
                 })
                 .collect::<Result<HashMap<_, _>>>()?),
 
             ApiVersionsResponse::V2 { api_versions, .. } => Ok(api_versions
                 .iter()
-                .map(|v| {
-                    Ok((
-                        v.api_key,
-                        (
-                            usize::try_from(v.min_version)?,
-                            usize::try_from(v.max_version)?,
-                        ),
-                    ))
+                .filter_map(|v| match ApiKey::try_from(v.api_key) {
+                    Ok(api_key) => Some((api_key, (v.min_version, v.max_version))),
+                    _ => None,
+                })
+                .map(|(api_key, (min, max))| {
+                    Ok((api_key, (usize::try_from(min)?, usize::try_from(max)?)))
                 })
                 .collect::<Result<HashMap<_, _>>>()?),
         };

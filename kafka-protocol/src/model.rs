@@ -6,6 +6,7 @@
     Copy,
     PartialEq,
     Eq,
+    Hash,
     serde_repr::Serialize_repr,
     serde_repr::Deserialize_repr,
     num_enum::IntoPrimitive,
@@ -108,6 +109,8 @@ pub enum ErrorCode {
     Hash,
     serde_repr::Serialize_repr,
     serde_repr::Deserialize_repr,
+    num_enum::IntoPrimitive,
+    num_enum::TryFromPrimitive,
 )]
 #[repr(i16)]
 pub enum ApiKey {
@@ -200,7 +203,7 @@ pub mod api_versions_response {
     pub mod v0 {
         #[derive(Debug, serde::Deserialize)]
         pub struct ApiVersion {
-            pub api_key: crate::model::ApiKey, // TODO: put back i16 (forward compat)
+            pub api_key: i16,
             pub min_version: i16,
             pub max_version: i16,
         }
@@ -208,7 +211,7 @@ pub mod api_versions_response {
     pub mod v1 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct ApiVersions {
-            pub api_key: crate::model::ApiKey,
+            pub api_key: i16,
             pub min_version: i16,
             pub max_version: i16,
         }
@@ -216,7 +219,7 @@ pub mod api_versions_response {
     pub mod v2 {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         pub struct ApiVersions {
-            pub api_key: crate::model::ApiKey,
+            pub api_key: i16,
             pub min_version: i16,
             pub max_version: i16,
         }
