@@ -10,8 +10,72 @@ use kafka_protocol::{
     model::*,
     types::*,
 };
+use lazy_static::lazy_static;
 use serde::ser::Serialize;
-use strum::EnumCount;
+use strum::{EnumCount, IntoEnumIterator};
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+type Sender<T> = mpsc::UnboundedSender<T>;
+type Receiver<T> = mpsc::UnboundedReceiver<T>;
+
+type SendOne<T> = oneshot::Sender<T>;
+type ReceiveOne<T> = oneshot::Receiver<T>;
+
+lazy_static! {
+    static ref SUPPORTED_VERSIONS: HashMap<ApiKey, (usize, usize)> = ApiKey::iter()
+        .map(|api_key| match api_key {
+
+            ApiKey::Produce => (api_key, (3, ProduceRequest::count() -1)),
+            ApiKey::Fetch => (api_key, (4, FetchRequest::count() -1)),
+            // ApiKey::ListOffsets => (api_key, (0, ListOffsetsRequest::count() -1)),
+            ApiKey::Metadata => (api_key, (0, MetadataRequest::count() -1)),
+            // ApiKey::LeaderAndIsr => (api_key, (0, LeaderAndIsrRequest::count() -1)),
+            // ApiKey::StopReplica => (api_key, (0, StopReplicaRequest::count() -1)),
+            // ApiKey::UpdateMetadata => (api_key, (0, UpdateMetadataRequest::count() -1)),
+            // ApiKey::ControlledShutdown => (api_key, (0, ControlledShutdownRequest::count() -1)),
+            // ApiKey::OffsetCommit => (api_key, (0, OffsetCommitRequest::count() -1)),
+            // ApiKey::OffsetFetch => (api_key, (0, OffsetFetchRequest::count() -1)),
+            // ApiKey::FindCoordinator => (api_key, (0, FindCoordinatorRequest::count() -1)),
+            // ApiKey::JoinGroup => (api_key, (0, JoinGroupRequest::count() -1)),
+            // ApiKey::Heartbeat => (api_key, (0, HeartbeatRequest::count() -1)),
+            // ApiKey::LeaveGroup => (api_key, (0, LeaveGroupRequest::count() -1)),
+            // ApiKey::SyncGroup => (api_key, (0, SyncGroupRequest::count() -1)),
+            // ApiKey::DescribeGroups => (api_key, (0, DescribeGroupsRequest::count() -1)),
+            // ApiKey::ListGroups => (api_key, (0, ListGroupsRequest::count() -1)),
+            // ApiKey::SaslHandshake => (api_key, (0, SaslHandshakeRequest::count() -1)),
+            ApiKey::ApiVersions => (api_key, (0, ApiVersionsRequest::count() -1)),
+            ApiKey::CreateTopics => (api_key, (0, CreateTopicsRequest::count() -1)),
+            // ApiKey::DeleteTopics => (api_key, (0, DeleteTopicsRequest::count() -1)),
+            // ApiKey::DeleteRecords => (api_key, (0, DeleteRecordsRequest::count() -1)),
+            // ApiKey::InitProducerId => (api_key, (0, InitProducerIdRequest::count() -1)),
+            // ApiKey::OffsetForLeaderEpoch => (api_key, (0, OffsetForLeaderEpochRequest::count() -1)),
+            // ApiKey::AddPartitionsToTxn => (api_key, (0, AddPartitionsToTxnRequest::count() -1)),
+            // ApiKey::AddOffsetsToTxn => (api_key, (0, AddOffsetsToTxnRequest::count() -1)),
+            // ApiKey::EndTxn => (api_key, (0, EndTxnRequest::count() -1)),
+            // ApiKey::WriteTxnMarkers => (api_key, (0, WriteTxnMarkersRequest::count() -1)),
+            // ApiKey::TxnOffsetCommit => (api_key, (0, TxnOffsetCommitRequest::count() -1)),
+            // ApiKey::DescribeAcls => (api_key, (0, DescribeAclsRequest::count() -1)),
+            // ApiKey::CreateAcls => (api_key, (0, CreateAclsRequest::count() -1)),
+            // ApiKey::DeleteAcls => (api_key, (0, DeleteAclsRequest::count() -1)),
+            // ApiKey::DescribeConfigs => (api_key, (0, DescribeConfigsRequest::count() -1)),
+            // ApiKey::AlterConfigs => (api_key, (0, AlterConfigsRequest::count() -1)),
+            // ApiKey::AlterReplicaLogDirs => (api_key, (0, AlterReplicaLogDirsRequest::count() -1)),
+            // ApiKey::DescribeLogDirs => (api_key, (0, DescribeLogDirsRequest::count() -1)),
+            // ApiKey::SaslAuthenticate => (api_key, (0, SaslAuthenticateRequest::count() -1)),
+            // ApiKey::CreatePartitions => (api_key, (0, CreatePartitionsRequest::count() -1)),
+            // ApiKey::CreateDelegationToken => (api_key, (0, CreateDelegationTokenRequest::count() -1)),
+            // ApiKey::RenewDelegationToken => (api_key, (0, RenewDelegationTokenRequest::count() -1)),
+            // ApiKey::ExpireDelegationToken => (api_key, (0, ExpireDelegationTokenRequest::count() -1)),
+            // ApiKey::DescribeDelegationToken => (api_key, (0, DescribeDelegationTokenRequest::count() -1)),
+            // ApiKey::DeleteGroups => (api_key, (0, DeleteGroupsRequest::count() -1)),
+            // ApiKey::ElectPreferredLeaders => (api_key, (0, ElectPreferredLeadersRequest::count() -1)),
+            // ApiKey::IncrementalAlterConfigs => (api_key, (0, IncrementalAlterConfigsRequest::count() -1)),
+
+            _ => (api_key, (0, 0)), // TODO: remove when using full model
+        })
+        .collect::<HashMap<_, _>>();
+}
 
 pub async fn read_resp<T>(
     stream: &mut TcpStream,
@@ -27,14 +91,6 @@ where
     stream.read_exact(&mut bytes).await?;
     decode_resp::<T>(&bytes, version)
 }
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-type Sender<T> = mpsc::UnboundedSender<T>;
-type Receiver<T> = mpsc::UnboundedReceiver<T>;
-
-type SendOne<T> = oneshot::Sender<T>;
-type ReceiveOne<T> = oneshot::Receiver<T>;
 
 // TODO: this is a draft (to identify required functionalities)
 async fn req_metadata(stream: &mut TcpStream, topics: Vec<String>) -> Result<MetadataResponse> {

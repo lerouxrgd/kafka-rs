@@ -111,6 +111,7 @@ pub enum ErrorCode {
     serde_repr::Deserialize_repr,
     num_enum::IntoPrimitive,
     num_enum::TryFromPrimitive,
+    strum_macros::EnumIter,
 )]
 #[repr(i16)]
 pub enum ApiKey {
@@ -163,7 +164,7 @@ pub enum ApiKey {
 
 #[derive(Debug, serde::Serialize)]
 pub struct HeaderRequest {
-    pub api_key: ApiKey,
+    pub api_key: crate::model::ApiKey,
     pub api_version: i16,
     pub correlation_id: i32,
     pub client_id: crate::types::NullableString,
