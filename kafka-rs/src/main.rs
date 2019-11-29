@@ -11,6 +11,7 @@ use kafka_protocol::{
     types::*,
 };
 use serde::ser::Serialize;
+use strum::EnumCount;
 
 pub async fn read_resp<T>(
     stream: &mut TcpStream,
@@ -116,8 +117,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
 }
 
 async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (usize, usize)>> {
-    for version in 0usize..3 {
-        // TODO: get range from enum directly
+    for version in 0..ApiVersionsRequest::count() {
         let header = HeaderRequest {
             api_key: ApiKey::ApiVersions,
             api_version: version as i16,
@@ -183,7 +183,7 @@ async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (
         };
     }
 
-    Err("boom".into())
+    Err("couldn't find a suitable version for ApiVersions request".into())
 }
 
 async fn broker_send_loop(mut requests: Receiver<Vec<u8>>, stream: Arc<TcpStream>) -> Result<()> {

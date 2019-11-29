@@ -171,14 +171,14 @@ pub struct HeaderResponse {
     pub correlation: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ApiVersionsRequest {
     V0 {},
     V1 {},
     V2 {},
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ApiVersionsResponse {
     V0 {
         error_code: i16,
@@ -223,7 +223,7 @@ pub mod api_versions_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum MetadataRequest {
     V0 {
         topics: Vec<metadata_request::v0::Topics>,
@@ -239,7 +239,7 @@ pub mod metadata_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum MetadataResponse {
     V0 {
         brokers: Vec<metadata_response::v0::Brokers>,
@@ -272,7 +272,7 @@ pub mod metadata_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateTopicsRequest {
     V0 {
         topics: Vec<create_topics_request::v0::Topics>,
@@ -303,7 +303,7 @@ pub mod create_topics_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum CreateTopicsResponse {
     V0 {
         topics: Vec<create_topics_response::v0::Topics>,
@@ -320,7 +320,7 @@ pub mod create_topics_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum FetchRequest {
     V0 {
         replica_id: i32,
@@ -425,7 +425,7 @@ pub mod fetch_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum FetchResponse {
     V0 {
         responses: Vec<fetch_response::v0::Responses>,
@@ -548,7 +548,7 @@ pub mod fetch_response {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ProduceRequest {
     V0 {
         acks: i16,
@@ -624,7 +624,7 @@ pub mod produce_request {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, strum_macros::EnumCount)]
 pub enum ProduceResponse {
     V0 {
         responses: Vec<produce_response::v0::Responses>,
