@@ -6,7 +6,7 @@ pub mod error;
 pub mod ser;
 
 pub use crate::codec::compression::Compression;
-pub use crate::codec::de::{decode_resp, Deserializer};
+pub use crate::codec::de::{decode_partial, decode_resp, Deserializer};
 pub use crate::codec::error::{Error, Result};
 pub use crate::codec::ser::{encode_req, Serializer};
 

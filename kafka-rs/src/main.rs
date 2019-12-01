@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod acc;
 mod req;
 
@@ -5,9 +7,9 @@ use std::{collections::HashMap, convert::TryFrom, sync::Arc};
 
 use arc_swap::ArcSwap;
 use async_std::{net::TcpStream, prelude::*, task};
-use futures::{channel::mpsc, channel::oneshot, SinkExt};
+use futures::{channel::mpsc, channel::oneshot, select, FutureExt, SinkExt};
 use kafka_protocol::{
-    codec::{self, decode_resp, encode_req, Compression, Deserializer, Serializer},
+    codec::{self, decode_partial, decode_resp, encode_req, Compression, Deserializer, Serializer},
     model::*,
     types::*,
 };
@@ -135,27 +137,43 @@ fn correlation_generator() -> impl FnMut() -> i32 {
 async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
     const CORR_ID_POS: usize = (32 + 16 + 16) / 8;
 
-    let mut brokers = HashMap::<String, Sender<Vec<u8>>>::new();
-    let mut brokers_index = HashMap::<(String, i32), String>::new();
+    #[derive(PartialOrd, Ord, PartialEq, Eq, Hash)]
+    struct IndexKey<'a> {
+        topic: std::borrow::Cow<'a, str>,
+        partition: i32,
+    }
+
+    let mut brokers = HashMap::<String, (Sender<Vec<u8>>, Sender<(i32, SendOne<Vec<u8>>)>)>::new();
+    let mut brokers_index = HashMap::<IndexKey, String>::new();
     let mut make_correlation_id = correlation_generator();
 
     while let Some(event) = events.next().await {
         match event {
             Event::Payload(mut payload) => {
                 let broker_id = brokers_index
-                    .get(&(payload.topic, payload.partition))
-                    .unwrap();
-                let broker = brokers.get_mut(broker_id).unwrap();
+                    .get(&IndexKey {
+                        topic: payload.topic.as_str().into(),
+                        partition: payload.partition,
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "no broker for topic: {} partition: {}",
+                            payload.topic, payload.partition
+                        )
+                    })?;
+                let (send_tx, recv_tx) = brokers.get_mut(broker_id).unwrap();
 
-                let correlation_id = make_correlation_id();
+                let corr_id = make_correlation_id();
                 payload.data.splice(
                     CORR_ID_POS..CORR_ID_POS + 4,
-                    correlation_id.to_be_bytes().iter().cloned(),
+                    corr_id.to_be_bytes().iter().cloned(),
                 );
 
-                broker.send(payload.data).await.unwrap();
+                recv_tx.send((corr_id, payload.responder)).await.unwrap();
+                send_tx.send(payload.data).await.unwrap();
             }
             Event::Init => {
+                // TODO: get seed brokers and topic from conf, somehow
                 let addrs = vec!["127.0.0.1:9092"];
                 let topic = vec!["test"];
 
@@ -182,9 +200,11 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
                     }
 
                     let stream = Arc::new(stream);
-                    let (broker_tx, broker_rx) = mpsc::unbounded();
-                    brokers.insert(addr.into(), broker_tx);
-                    spawn_and_log_error(broker_send_loop(broker_rx, Arc::clone(&stream)));
+                    let (send_tx, send_rx) = mpsc::unbounded();
+                    let (recv_tx, recv_rx) = mpsc::unbounded();
+                    brokers.insert(addr.into(), (send_tx, recv_tx));
+                    spawn_and_log_error(broker_send_loop(send_rx, Arc::clone(&stream)));
+                    spawn_and_log_error(broker_receive_loop(recv_rx, Arc::clone(&stream)));
                 }
 
                 API_VERSIONS.store(Arc::new(
@@ -292,15 +312,54 @@ async fn broker_send_loop(mut requests: Receiver<Vec<u8>>, stream: Arc<TcpStream
     Ok(())
 }
 
+async fn broker_receive_loop(
+    responders: Receiver<(i32, SendOne<Vec<u8>>)>,
+    stream: Arc<TcpStream>,
+) -> Result<()> {
+    let mut stream = &*stream;
+    let mut responders = responders.fuse();
+    let mut pending = HashMap::<i32, SendOne<Vec<u8>>>::with_capacity(2048);
+    let mut buf = [0u8; 4];
+
+    loop {
+        select! {
+            responder = responders.next().fuse() => match responder {
+                Some((corr_id, sender)) => {
+                    pending.insert(corr_id, sender);
+                }
+                None => break,
+            },
+            read = stream.read_exact(&mut buf).fuse() => {
+                if let Err(err) = read {
+                    return Err(err.into());
+                }
+
+                let size = i32::from_be_bytes(buf);
+                let mut bytes = vec![0; usize::try_from(size)?];
+                stream.read_exact(&mut bytes).await?;
+                let (header, remaining) = decode_partial(&bytes)?;
+                let bytes = bytes.split_off(bytes.len() - remaining);
+
+                match pending.remove(&header.correlation) {
+                    Some(sender) => match sender.send(bytes) {
+                        Ok(()) => continue,
+                        Err(data) => return Err("couldn't send bytes".into())
+                    },
+                    None => return Err("no pending request for received response".into())
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 struct Payload {
     topic: String,
     partition: i32,
     data: Vec<u8>,
-    response: SendOne<Response>,
+    responder: SendOne<Vec<u8>>,
 }
-
-// TODO: wrap all possible response enums ?
-enum Response {}
 
 // TODO: add some Metadata variant
 // TODO: also reset all broker_loop when new Metadata are received

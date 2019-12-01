@@ -34,6 +34,13 @@ where
     }
 }
 
+pub fn decode_partial(input: &[u8]) -> Result<(HeaderResponse, usize)> {
+    let mut deserializer = Deserializer::from_bytes(input, 0);
+    let header = HeaderResponse::deserialize(&mut deserializer)?;
+    let remaining = deserializer.len();
+    Ok((header, remaining))
+}
+
 #[derive(Debug)]
 pub struct Deserializer<'b, 'de: 'b> {
     input: Rc<RefCell<&'b [u8]>>,
