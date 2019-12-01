@@ -3,6 +3,7 @@ mod req;
 
 use std::{collections::HashMap, convert::TryFrom, sync::Arc};
 
+use arc_swap::ArcSwap;
 use async_std::{net::TcpStream, prelude::*, task};
 use futures::{channel::mpsc, channel::oneshot, SinkExt};
 use kafka_protocol::{
@@ -23,9 +24,9 @@ type SendOne<T> = oneshot::Sender<T>;
 type ReceiveOne<T> = oneshot::Receiver<T>;
 
 lazy_static! {
-    static ref SUPPORTED_VERSIONS: HashMap<ApiKey, (usize, usize)> = ApiKey::iter()
-        .map(|api_key| match api_key {
 
+    static ref SUPPORTED_API_VERSIONS: HashMap<ApiKey, (usize, usize)> = ApiKey::iter()
+        .map(|api_key| match api_key {
             ApiKey::Produce => (api_key, (3, ProduceRequest::count() -1)),
             ApiKey::Fetch => (api_key, (4, FetchRequest::count() -1)),
             // ApiKey::ListOffsets => (api_key, (0, ListOffsetsRequest::count() -1)),
@@ -71,10 +72,17 @@ lazy_static! {
             // ApiKey::DeleteGroups => (api_key, (0, DeleteGroupsRequest::count() -1)),
             // ApiKey::ElectPreferredLeaders => (api_key, (0, ElectPreferredLeadersRequest::count() -1)),
             // ApiKey::IncrementalAlterConfigs => (api_key, (0, IncrementalAlterConfigsRequest::count() -1)),
-
             _ => (api_key, (0, 0)), // TODO: remove when using full model
         })
         .collect::<HashMap<_, _>>();
+
+    static ref API_VERSIONS: ArcSwap<HashMap<ApiKey, usize>> = {
+        let api_versions = SUPPORTED_API_VERSIONS
+            .iter()
+            .map(|(api_key, (min, _))| (*api_key, *min))
+            .collect::<HashMap<_, _>>();
+        ArcSwap::from(Arc::new(api_versions))
+    };
 }
 
 pub async fn read_resp<T>(
@@ -131,8 +139,6 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
     let mut brokers_index = HashMap::<(String, i32), String>::new();
     let mut make_correlation_id = correlation_generator();
 
-    let mut api_versions = HashMap::<ApiKey, i16>::new(); // TODO: once_cell/arc-swap ?
-
     while let Some(event) = events.next().await {
         match event {
             Event::Payload(mut payload) => {
@@ -150,26 +156,68 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
                 broker.send(payload.data).await.unwrap();
             }
             Event::Init => {
-                // TODO: ApiVersions request, await response
-                // TODO: setup global map valid for all brokers ? (vers. intersection)
                 let addrs = vec!["127.0.0.1:9092"];
                 let topic = vec!["test"];
+
+                let mut supported_versions = SUPPORTED_API_VERSIONS.clone();
 
                 for addr in addrs {
                     let mut stream = TcpStream::connect(addr).await?;
 
                     let versions = broker_api_versions(&mut stream).await?;
+                    for (api_key, version) in versions {
+                        let supported = supported_versions.get_mut(&api_key).unwrap();
+                        match intersection(supported, &version) {
+                            Some(overlap) => {
+                                *supported = overlap;
+                            }
+                            None => {
+                                return Err(format!(
+                                "unsupported api {:?} version {:?} for broker {}, supported: {:?}",
+                                api_key, version, addr, supported
+                            )
+                                .into())
+                            }
+                        }
+                    }
 
                     let stream = Arc::new(stream);
                     let (broker_tx, broker_rx) = mpsc::unbounded();
                     brokers.insert(addr.into(), broker_tx);
                     spawn_and_log_error(broker_send_loop(broker_rx, Arc::clone(&stream)));
                 }
+
+                API_VERSIONS.store(Arc::new(
+                    supported_versions
+                        .into_iter()
+                        .map(|(api_key, (_, max))| (api_key, max))
+                        .collect::<HashMap<_, _>>(),
+                ));
             }
         }
     }
 
     Ok(())
+}
+
+fn intersection(a: &(usize, usize), b: &(usize, usize)) -> Option<(usize, usize)> {
+    assert!(a.0 <= a.1);
+    assert!(b.0 <= b.1);
+    if b.0 >= a.0 && b.0 <= a.1 {
+        if b.1 >= a.1 {
+            Some((b.0, a.1))
+        } else {
+            Some((b.0, b.1))
+        }
+    } else if a.0 >= b.0 && a.0 <= b.1 {
+        if a.1 >= b.1 {
+            Some((a.0, b.1))
+        } else {
+            Some((a.0, a.1))
+        }
+    } else {
+        None
+    }
 }
 
 async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (usize, usize)>> {
