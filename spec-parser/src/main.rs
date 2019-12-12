@@ -6,12 +6,12 @@ use std::io::{prelude::*, stdout, Write};
 use std::process::{self, Command};
 
 use docopt::Docopt;
-use failure;
 use reqwest;
 use serde::Deserialize;
+use thiserror::Error;
 
-use parser::{ReqRespMotif, SpecParser};
-use templates::Templater;
+use crate::parser::{ParserError, ReqRespMotif, SpecParser};
+use crate::templates::Templater;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -35,7 +35,19 @@ struct CmdArgs {
     flag_version: bool,
 }
 
-fn main() -> Result<(), failure::Error> {
+#[derive(Error, Debug)]
+enum Error {
+    #[error("{}", .0)]
+    Io(#[from] std::io::Error),
+    #[error("{}", .0)]
+    Http(#[from] reqwest::Error),
+    #[error("{}", .0)]
+    Parser(#[from] ParserError),
+    #[error("{}", .0)]
+    Template(#[from] tera::Error),
+}
+
+fn main() -> Result<(), Error> {
     let args: CmdArgs = Docopt::new(USAGE)
         .and_then(|d| d.deserialize())
         .unwrap_or_else(|e| e.exit());

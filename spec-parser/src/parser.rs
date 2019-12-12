@@ -1,24 +1,34 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use failure::{Error, Fail};
 use heck::{CamelCase, SnakeCase};
 use indexmap::IndexMap;
 use lazy_static::*;
 use pest::Parser as _;
 use pest_derive::*;
 use regex::Regex;
+use thiserror::Error;
 
 use crate::templates::motif;
 
 /// Describes errors that occured while parsing protocol specs.
-#[derive(Fail, Debug)]
-#[fail(display = "Parser failure: {}", _0)]
-pub struct ParserError(String);
+#[derive(Error, Debug)]
+pub enum ParserError {
+    #[error("Invalid data: {}", .0)]
+    Invalid(String),
+    #[error("Grammar error: {}", .0)]
+    Grammar(pest::error::Error<Rule>),
+}
 
-impl ParserError {
-    pub fn new<S: Into<String>>(msg: S) -> ParserError {
-        ParserError(msg.into())
+impl From<std::num::ParseIntError> for ParserError {
+    fn from(source: std::num::ParseIntError) -> Self {
+        Self::Invalid(source.to_string())
+    }
+}
+
+impl From<pest::error::Error<Rule>> for ParserError {
+    fn from(source: pest::error::Error<Rule>) -> Self {
+        Self::Grammar(source)
     }
 }
 
@@ -47,7 +57,7 @@ pub enum Spec<'a> {
 
 impl<'a> SpecParser<'a> {
     /// Parses raw file content and return an initialized SpecParser.
-    pub fn new(raw: &'a str) -> Result<Self, Error> {
+    pub fn new(raw: &'a str) -> Result<Self, ParserError> {
         let parsed_file = ProtocolParser::parse(Rule::file, &raw)?
             .next() // there is exactly one { file }
             .expect("Unreachable file rule");
@@ -378,7 +388,7 @@ fn capped_comment(text: &str, nb_indent: usize) -> String {
         .join("\n")
 }
 
-fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error> {
+fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), ParserError> {
     #[derive(Debug, Clone)]
     enum Field<'a> {
         Simple(Cow<'a, str>),
@@ -457,7 +467,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
     fn insert_spec<'a>(
         mut specs: HashMap<Cow<'a, str>, Spec<'a>>,
         line: Line<'a>,
-    ) -> Result<HashMap<Cow<'a, str>, Spec<'a>>, Error> {
+    ) -> Result<HashMap<Cow<'a, str>, Spec<'a>>, ParserError> {
         match line {
             Line {
                 kind: Kind::Value(primitive),
@@ -485,13 +495,13 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
                     match field {
                         Field::Simple(ref name) => {
                             let spec = specs.get(name).ok_or_else(|| {
-                                ParserError::new(format!("Missing spec for field: {}", name))
+                                ParserError::Invalid(format!("Missing spec for field: {}", name))
                             })?;
                             inner_specs.push((name.clone(), spec.clone()));
                         }
                         Field::Array(ref name) => {
                             let spec = specs.get(name).ok_or_else(|| {
-                                ParserError::new(format!("Missing spec for field: {}", name))
+                                ParserError::Invalid(format!("Missing spec for field: {}", name))
                             })?;
                             inner_specs.push((name.clone(), Spec::Array(Box::new(spec.clone()))));
                         }
@@ -513,7 +523,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
     let (first, rest) = raw_lines.split_first().expect("Unreachable split fail");
 
     let header = HEADER.captures(first).ok_or_else(|| {
-        ParserError::new(format!("First line didn't match: {:?} {}", *HEADER, first))
+        ParserError::Invalid(format!("First line didn't match: {:?} {}", *HEADER, first))
     })?;
 
     let (name, version) = match (header.get(1), header.get(2), header.get(3)) {
@@ -522,7 +532,7 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
             let name = format!("{}{}", name.as_str(), genre.as_str());
             (name, version)
         }
-        _ => return Err(ParserError::new(format!("Invalid name match: {:?}", header)).into()),
+        _ => return Err(ParserError::Invalid(format!("Invalid name match: {:?}", header)).into()),
     };
 
     let root = Kind::for_root(header.get(4).map_or("", |m| m.as_str().trim()));
@@ -553,13 +563,13 @@ fn parse_struct_spec<'a>(raw: &'a str) -> Result<(String, i16, Spec<'a>), Error>
             match field {
                 Field::Simple(ref name) => {
                     let field_spec = fields_spec.get(name).ok_or_else(|| {
-                        ParserError::new(format!("Missing spec for root field: {}", name))
+                        ParserError::Invalid(format!("Missing spec for root field: {}", name))
                     })?;
                     specs.push((name.clone(), field_spec.clone()));
                 }
                 Field::Array(ref name) => {
                     let field_spec = fields_spec.get(name).ok_or_else(|| {
-                        ParserError::new(format!("Missing spec for root field: {}", name))
+                        ParserError::Invalid(format!("Missing spec for root field: {}", name))
                     })?;
                     specs.push((name.clone(), Spec::Array(Box::new(field_spec.clone()))));
                 }

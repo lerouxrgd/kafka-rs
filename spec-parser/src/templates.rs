@@ -1,5 +1,4 @@
-use failure::{Error, SyncFailure};
-use tera::{Context, Tera};
+use tera::{Context, Error, Tera};
 
 /// Types used by templatings methods
 pub mod motif {
@@ -117,27 +116,6 @@ pub mod {{ name }} {
 }
 "#;
 
-/// Fix for converting error-chain to failure.
-/// see  https://github.com/rust-lang-nursery/failure/issues/109
-trait ResultExt<T, E> {
-    fn sync(self) -> Result<T, SyncFailure<E>>
-    where
-        Self: Sized,
-        E: ::std::error::Error + Send + 'static;
-}
-
-/// Fix for converting error-chain to failure.
-/// see  https://github.com/rust-lang-nursery/failure/issues/109
-impl<T, E> ResultExt<T, E> for Result<T, E> {
-    fn sync(self) -> Result<T, SyncFailure<E>>
-    where
-        Self: Sized,
-        E: ::std::error::Error + Send + 'static,
-    {
-        self.map_err(SyncFailure::new)
-    }
-}
-
 /// The main, stateless, component for templating. Current implementation uses Tera.
 /// It generates String of Rust code/types corresponding to Kafka protocol.
 pub struct Templater {
@@ -147,15 +125,11 @@ pub struct Templater {
 impl Templater {
     /// Creates a new `Templater.`
     pub fn new() -> Result<Templater, Error> {
-        let mut tera = Tera::new("/dev/null/*").sync()?;
-        tera.add_raw_template(ERROR_CODES_TERA, ERROR_CODES_TEMPLATE)
-            .sync()?;
-        tera.add_raw_template(API_KEYS_TERA, API_KEYS_TEMPLATE)
-            .sync()?;
-        tera.add_raw_template(REQ_RESP_ENUM_TERA, REQ_RESP_ENUM_TEMPLATE)
-            .sync()?;
-        tera.add_raw_template(REQ_RESP_MOD_TERA, REQ_RESP_MOD_TEMPLATE)
-            .sync()?;
+        let mut tera = Tera::new("/dev/null/*")?;
+        tera.add_raw_template(ERROR_CODES_TERA, ERROR_CODES_TEMPLATE)?;
+        tera.add_raw_template(API_KEYS_TERA, API_KEYS_TEMPLATE)?;
+        tera.add_raw_template(REQ_RESP_ENUM_TERA, REQ_RESP_ENUM_TEMPLATE)?;
+        tera.add_raw_template(REQ_RESP_MOD_TERA, REQ_RESP_MOD_TEMPLATE)?;
         Ok(Templater { tera })
     }
 
@@ -168,14 +142,14 @@ impl Templater {
     pub fn str_err_codes(&self, err_codes: &motif::ErrorCodeRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("err_codes", err_codes);
-        Ok(self.tera.render(ERROR_CODES_TERA, &ctx).sync()?)
+        Ok(self.tera.render(ERROR_CODES_TERA, &ctx)?)
     }
 
     /// Generates an enum with all Kafka api keys.
     pub fn str_api_keys(&self, api_keys: &motif::ApiKeyRows) -> Result<String, Error> {
         let mut ctx = Context::new();
         ctx.insert("api_keys", api_keys);
-        Ok(self.tera.render(API_KEYS_TERA, &ctx).sync()?)
+        Ok(self.tera.render(API_KEYS_TERA, &ctx)?)
     }
 
     /// Generates a versioned enum for a given request/response of the Kafka protocol
@@ -187,7 +161,7 @@ impl Templater {
         let mut ctx = Context::new();
         ctx.insert("name", enum_name);
         ctx.insert("versions", versions);
-        Ok(self.tera.render(REQ_RESP_ENUM_TERA, &ctx).sync()?)
+        Ok(self.tera.render(REQ_RESP_ENUM_TERA, &ctx)?)
     }
 
     /// Generates versioned modules for the inner structs of versioned req_resp enums
@@ -199,7 +173,7 @@ impl Templater {
         let mut ctx = Context::new();
         ctx.insert("name", module_name);
         ctx.insert("versions", versions);
-        Ok(self.tera.render(REQ_RESP_MOD_TERA, &ctx).sync()?)
+        Ok(self.tera.render(REQ_RESP_MOD_TERA, &ctx)?)
     }
 }
 
