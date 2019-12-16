@@ -29,51 +29,51 @@ lazy_static! {
 
     static ref SUPPORTED_API_VERSIONS: HashMap<ApiKey, (usize, usize)> = ApiKey::iter()
         .map(|api_key| match api_key {
-            ApiKey::Produce => (api_key, (3, ProduceRequest::count() -1)),
-            ApiKey::Fetch => (api_key, (4, FetchRequest::count() -1)),
-            // ApiKey::ListOffsets => (api_key, (0, ListOffsetsRequest::count() -1)),
-            ApiKey::Metadata => (api_key, (0, MetadataRequest::count() -1)),
-            // ApiKey::LeaderAndIsr => (api_key, (0, LeaderAndIsrRequest::count() -1)),
-            // ApiKey::StopReplica => (api_key, (0, StopReplicaRequest::count() -1)),
-            // ApiKey::UpdateMetadata => (api_key, (0, UpdateMetadataRequest::count() -1)),
-            // ApiKey::ControlledShutdown => (api_key, (0, ControlledShutdownRequest::count() -1)),
-            // ApiKey::OffsetCommit => (api_key, (0, OffsetCommitRequest::count() -1)),
-            // ApiKey::OffsetFetch => (api_key, (0, OffsetFetchRequest::count() -1)),
-            // ApiKey::FindCoordinator => (api_key, (0, FindCoordinatorRequest::count() -1)),
-            // ApiKey::JoinGroup => (api_key, (0, JoinGroupRequest::count() -1)),
-            // ApiKey::Heartbeat => (api_key, (0, HeartbeatRequest::count() -1)),
-            // ApiKey::LeaveGroup => (api_key, (0, LeaveGroupRequest::count() -1)),
-            // ApiKey::SyncGroup => (api_key, (0, SyncGroupRequest::count() -1)),
-            // ApiKey::DescribeGroups => (api_key, (0, DescribeGroupsRequest::count() -1)),
-            // ApiKey::ListGroups => (api_key, (0, ListGroupsRequest::count() -1)),
-            // ApiKey::SaslHandshake => (api_key, (0, SaslHandshakeRequest::count() -1)),
-            ApiKey::ApiVersions => (api_key, (0, ApiVersionsRequest::count() -1)),
-            ApiKey::CreateTopics => (api_key, (0, CreateTopicsRequest::count() -1)),
-            // ApiKey::DeleteTopics => (api_key, (0, DeleteTopicsRequest::count() -1)),
-            // ApiKey::DeleteRecords => (api_key, (0, DeleteRecordsRequest::count() -1)),
-            // ApiKey::InitProducerId => (api_key, (0, InitProducerIdRequest::count() -1)),
-            // ApiKey::OffsetForLeaderEpoch => (api_key, (0, OffsetForLeaderEpochRequest::count() -1)),
-            // ApiKey::AddPartitionsToTxn => (api_key, (0, AddPartitionsToTxnRequest::count() -1)),
-            // ApiKey::AddOffsetsToTxn => (api_key, (0, AddOffsetsToTxnRequest::count() -1)),
-            // ApiKey::EndTxn => (api_key, (0, EndTxnRequest::count() -1)),
-            // ApiKey::WriteTxnMarkers => (api_key, (0, WriteTxnMarkersRequest::count() -1)),
-            // ApiKey::TxnOffsetCommit => (api_key, (0, TxnOffsetCommitRequest::count() -1)),
-            // ApiKey::DescribeAcls => (api_key, (0, DescribeAclsRequest::count() -1)),
-            // ApiKey::CreateAcls => (api_key, (0, CreateAclsRequest::count() -1)),
-            // ApiKey::DeleteAcls => (api_key, (0, DeleteAclsRequest::count() -1)),
-            // ApiKey::DescribeConfigs => (api_key, (0, DescribeConfigsRequest::count() -1)),
-            // ApiKey::AlterConfigs => (api_key, (0, AlterConfigsRequest::count() -1)),
-            // ApiKey::AlterReplicaLogDirs => (api_key, (0, AlterReplicaLogDirsRequest::count() -1)),
-            // ApiKey::DescribeLogDirs => (api_key, (0, DescribeLogDirsRequest::count() -1)),
-            // ApiKey::SaslAuthenticate => (api_key, (0, SaslAuthenticateRequest::count() -1)),
-            // ApiKey::CreatePartitions => (api_key, (0, CreatePartitionsRequest::count() -1)),
-            // ApiKey::CreateDelegationToken => (api_key, (0, CreateDelegationTokenRequest::count() -1)),
-            // ApiKey::RenewDelegationToken => (api_key, (0, RenewDelegationTokenRequest::count() -1)),
-            // ApiKey::ExpireDelegationToken => (api_key, (0, ExpireDelegationTokenRequest::count() -1)),
-            // ApiKey::DescribeDelegationToken => (api_key, (0, DescribeDelegationTokenRequest::count() -1)),
-            // ApiKey::DeleteGroups => (api_key, (0, DeleteGroupsRequest::count() -1)),
-            // ApiKey::ElectPreferredLeaders => (api_key, (0, ElectPreferredLeadersRequest::count() -1)),
-            // ApiKey::IncrementalAlterConfigs => (api_key, (0, IncrementalAlterConfigsRequest::count() -1)),
+            ApiKey::Produce => (api_key, (3, ProduceRequest::count()-1)),
+            ApiKey::Fetch => (api_key, (4, FetchRequest::count()-1)),
+            // ApiKey::ListOffsets => (api_key, (0, ListOffsetsRequest::count()-1)),
+            ApiKey::Metadata => (api_key, (0, MetadataRequest::count()-1)),
+            // ApiKey::LeaderAndIsr => (api_key, (0, LeaderAndIsrRequest::count()-1)),
+            // ApiKey::StopReplica => (api_key, (0, StopReplicaRequest::count()-1)),
+            // ApiKey::UpdateMetadata => (api_key, (0, UpdateMetadataRequest::count()-1)),
+            // ApiKey::ControlledShutdown => (api_key, (0, ControlledShutdownRequest::count()-1)),
+            // ApiKey::OffsetCommit => (api_key, (0, OffsetCommitRequest::count()-1)),
+            // ApiKey::OffsetFetch => (api_key, (0, OffsetFetchRequest::count()-1)),
+            // ApiKey::FindCoordinator => (api_key, (0, FindCoordinatorRequest::count()-1)),
+            // ApiKey::JoinGroup => (api_key, (0, JoinGroupRequest::count()-1)),
+            // ApiKey::Heartbeat => (api_key, (0, HeartbeatRequest::count()-1)),
+            // ApiKey::LeaveGroup => (api_key, (0, LeaveGroupRequest::count()-1)),
+            // ApiKey::SyncGroup => (api_key, (0, SyncGroupRequest::count()-1)),
+            // ApiKey::DescribeGroups => (api_key, (0, DescribeGroupsRequest::count()-1)),
+            // ApiKey::ListGroups => (api_key, (0, ListGroupsRequest::count()-1)),
+            // ApiKey::SaslHandshake => (api_key, (0, SaslHandshakeRequest::count()-1)),
+            ApiKey::ApiVersions => (api_key, (0, ApiVersionsRequest::count()-1)),
+            ApiKey::CreateTopics => (api_key, (0, CreateTopicsRequest::count()-1)),
+            // ApiKey::DeleteTopics => (api_key, (0, DeleteTopicsRequest::count()-1)),
+            // ApiKey::DeleteRecords => (api_key, (0, DeleteRecordsRequest::count()-1)),
+            // ApiKey::InitProducerId => (api_key, (0, InitProducerIdRequest::count()-1)),
+            // ApiKey::OffsetForLeaderEpoch => (api_key, (0, OffsetForLeaderEpochRequest::count()-1)),
+            // ApiKey::AddPartitionsToTxn => (api_key, (0, AddPartitionsToTxnRequest::count()-1)),
+            // ApiKey::AddOffsetsToTxn => (api_key, (0, AddOffsetsToTxnRequest::count()-1)),
+            // ApiKey::EndTxn => (api_key, (0, EndTxnRequest::count()-1)),
+            // ApiKey::WriteTxnMarkers => (api_key, (0, WriteTxnMarkersRequest::count()-1)),
+            // ApiKey::TxnOffsetCommit => (api_key, (0, TxnOffsetCommitRequest::count()-1)),
+            // ApiKey::DescribeAcls => (api_key, (0, DescribeAclsRequest::count()-1)),
+            // ApiKey::CreateAcls => (api_key, (0, CreateAclsRequest::count()-1)),
+            // ApiKey::DeleteAcls => (api_key, (0, DeleteAclsRequest::count()-1)),
+            // ApiKey::DescribeConfigs => (api_key, (0, DescribeConfigsRequest::count()-1)),
+            // ApiKey::AlterConfigs => (api_key, (0, AlterConfigsRequest::count()-1)),
+            // ApiKey::AlterReplicaLogDirs => (api_key, (0, AlterReplicaLogDirsRequest::count()-1)),
+            // ApiKey::DescribeLogDirs => (api_key, (0, DescribeLogDirsRequest::count()-1)),
+            // ApiKey::SaslAuthenticate => (api_key, (0, SaslAuthenticateRequest::count()-1)),
+            // ApiKey::CreatePartitions => (api_key, (0, CreatePartitionsRequest::count()-1)),
+            // ApiKey::CreateDelegationToken => (api_key, (0, CreateDelegationTokenRequest::count()-1)),
+            // ApiKey::RenewDelegationToken => (api_key, (0, RenewDelegationTokenRequest::count()-1)),
+            // ApiKey::ExpireDelegationToken => (api_key, (0, ExpireDelegationTokenRequest::count()-1)),
+            // ApiKey::DescribeDelegationToken => (api_key, (0, DescribeDelegationTokenRequest::count()-1)),
+            // ApiKey::DeleteGroups => (api_key, (0, DeleteGroupsRequest::count()-1)),
+            // ApiKey::ElectPreferredLeaders => (api_key, (0, ElectPreferredLeadersRequest::count()-1)),
+            // ApiKey::IncrementalAlterConfigs => (api_key, (0, IncrementalAlterConfigsRequest::count()-1)),
             _ => (api_key, (0, 0)), // TODO: remove when using full model
         })
         .collect::<HashMap<_, _>>();
@@ -175,12 +175,26 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
             Event::Init => {
                 // TODO: get seed brokers and topic from conf, somehow
                 let addrs = vec!["127.0.0.1:9092"];
-                let topic = vec!["test"];
+                let topics = vec!["test"];
+
+                brokers_index = bootstrap_metadata(&addrs, &topics)
+                    .await?
+                    .into_iter()
+                    .map(|((topic, partition), broker)| {
+                        (
+                            IndexKey {
+                                topic: topic.into(),
+                                partition,
+                            },
+                            broker,
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
 
                 let mut supported_versions = SUPPORTED_API_VERSIONS.clone();
 
-                for addr in addrs {
-                    let mut stream = TcpStream::connect(addr).await?;
+                for (_, broker) in &brokers_index {
+                    let mut stream = TcpStream::connect(broker).await?;
 
                     let versions = broker_api_versions(&mut stream).await?;
                     for (api_key, version) in versions {
@@ -192,7 +206,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
                             None => {
                                 return Err(format!(
                                 "unsupported api {:?} version {:?} for broker {}, supported: {:?}",
-                                api_key, version, addr, supported
+                                api_key, version, broker, supported
                             )
                                 .into())
                             }
@@ -202,7 +216,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
                     let stream = Arc::new(stream);
                     let (send_tx, send_rx) = mpsc::unbounded();
                     let (recv_tx, recv_rx) = mpsc::unbounded();
-                    brokers.insert(addr.into(), (send_tx, recv_tx));
+                    brokers.insert(broker.clone(), (send_tx, recv_tx));
                     spawn_and_log_error(broker_send_loop(send_rx, Arc::clone(&stream)));
                     spawn_and_log_error(broker_receive_loop(recv_rx, Arc::clone(&stream)));
                 }
@@ -238,6 +252,69 @@ fn intersection(a: &(usize, usize), b: &(usize, usize)) -> Option<(usize, usize)
     } else {
         None
     }
+}
+
+async fn bootstrap_metadata(
+    addrs: &[&str],
+    topics: &[&str],
+) -> Result<HashMap<(String, i32), String>> {
+    const VERSION_MAX: u8 = METADATAREQUEST_COUNT as u8;
+
+    'addr: for addr in addrs {
+        'version: for version in 0..MetadataRequest::count() {
+            let mut stream = TcpStream::connect(addr).await?;
+
+            let header = HeaderRequest {
+                api_key: ApiKey::Metadata,
+                api_version: version as i16,
+                correlation_id: 0,
+                client_id: NullableString(None),
+            };
+
+            let req = match version as u8 {
+                0 => MetadataRequest::V0 {
+                    topics: topics
+                        .into_iter()
+                        .map(|topic| metadata_request::v0::Topics {
+                            name: topic.to_string(),
+                        })
+                        .collect::<Vec<_>>(),
+                },
+                VERSION_MAX..=255 => unreachable!(),
+            };
+
+            let bytes = encode_req(&header, &req)?;
+            match stream.write_all(&bytes).await {
+                Err(_) => break 'addr,
+                Ok(()) => (),
+            }
+            match read_resp::<MetadataResponse>(&mut stream, version).await {
+                Err(_) => break 'version,
+                Ok((_, resp)) => match resp {
+                    MetadataResponse::V0 { topics, brokers } => {
+                        let brokers = brokers
+                            .into_iter()
+                            .map(|b| (b.node_id, format!("{}:{}", b.host, b.port)))
+                            .collect::<HashMap<_, _>>();
+
+                        let mut brokers_index = HashMap::new();
+                        for t in topics {
+                            for p in t.partitions {
+                                brokers_index.insert(
+                                    (t.name.clone(), p.partition_index),
+                                    brokers.get(&p.partition_index).unwrap().clone(),
+                                );
+                            }
+                        }
+
+                        return Ok(brokers_index);
+                    }
+                },
+            }
+        }
+    }
+
+    Err("Couldn't find any broker handling metadata requests".into())
 }
 
 async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (usize, usize)>> {
