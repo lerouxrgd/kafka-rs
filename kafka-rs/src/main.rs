@@ -3,7 +3,7 @@
 mod acc;
 mod req;
 
-use std::{collections::HashMap, convert::TryFrom, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, convert::TryFrom, sync::Arc};
 
 use arc_swap::ArcSwap;
 use async_std::{net::TcpStream, prelude::*, task};
@@ -139,7 +139,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
 
     #[derive(PartialOrd, Ord, PartialEq, Eq, Hash)]
     struct IndexKey<'a> {
-        topic: std::borrow::Cow<'a, str>,
+        topic: Cow<'a, str>,
         partition: i32,
     }
 
@@ -152,7 +152,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
             Event::Payload(mut payload) => {
                 let broker_id = brokers_index
                     .get(&IndexKey {
-                        topic: payload.topic.as_str().into(),
+                        topic: Cow::Borrowed(payload.topic.as_str()),
                         partition: payload.partition,
                     })
                     .ok_or_else(|| {
@@ -161,6 +161,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
                             payload.topic, payload.partition
                         )
                     })?;
+
                 let (send_tx, recv_tx) = brokers.get_mut(broker_id).unwrap();
 
                 let corr_id = make_correlation_id();
@@ -183,7 +184,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
                     .map(|((topic, partition), broker)| {
                         (
                             IndexKey {
-                                topic: topic.into(),
+                                topic: Cow::Owned(topic),
                                 partition,
                             },
                             broker,
@@ -193,6 +194,7 @@ async fn dispatcher_loop(mut events: Receiver<Event>) -> Result<()> {
 
                 let mut supported_versions = SUPPORTED_API_VERSIONS.clone();
 
+                // TODO: fix this, it can create multiple connections to the same broker
                 for (_, broker) in &brokers_index {
                     let mut stream = TcpStream::connect(broker).await?;
 
@@ -325,7 +327,7 @@ async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (
             correlation_id: 0,
             client_id: NullableString(None),
         };
-        let bytes = encode_req(&header, &ApiVersionsRequest::V0 {})?;
+        let bytes = encode_req(&header, &ApiVersionsRequest::V0 {})?; // TODO: use appropriate version somehow
 
         stream.write_all(&bytes).await?;
         let (_, resp) = read_resp::<ApiVersionsResponse>(stream, version).await?;
@@ -384,7 +386,7 @@ async fn broker_api_versions(stream: &mut TcpStream) -> Result<HashMap<ApiKey, (
 async fn broker_send_loop(mut requests: Receiver<Vec<u8>>, stream: Arc<TcpStream>) -> Result<()> {
     let mut stream = &*stream;
     while let Some(request) = requests.next().await {
-        stream.write_all(&request).await?;
+        stream.write_all(&request).await?; // TODO: handle reconnection here ...
     }
     Ok(())
 }
