@@ -1,13 +1,18 @@
 #![recursion_limit = "256"]
 
 mod acc;
+mod config;
+mod metadata;
 mod req;
 
 use std::{borrow::Cow, collections::HashMap, convert::TryFrom, sync::Arc};
 
 use arc_swap::ArcSwap;
 use async_std::{net::TcpStream, prelude::*, task};
-use futures::{channel::mpsc, channel::oneshot, select, FutureExt, SinkExt};
+use futures::{
+    channel::{mpsc, oneshot},
+    select, FutureExt, SinkExt,
+};
 use kafka_protocol::{
     codec::{self, decode_partial, decode_resp, encode_req, Compression, Deserializer, Serializer},
     model::*,
@@ -22,7 +27,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 type Sender<T> = mpsc::UnboundedSender<T>;
 type Receiver<T> = mpsc::UnboundedReceiver<T>;
 
-type SendOne<T> = oneshot::Sender<T>;
+type SendOne<T> = oneshot::Sender<T>; // TODO: Maybe force it to be a Result<T, E>
 type ReceiveOne<T> = oneshot::Receiver<T>;
 
 lazy_static! {
